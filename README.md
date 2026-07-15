@@ -14,7 +14,10 @@ once, record `begin → fulfilled / rejected / abandoned` alongside whatever sta
 you already use, and the same record feeds your error reports, your funnel, your other
 frontend domains, and any AI agent that needs to know what the user was doing.
 
-**It records; it never executes, retries, or owns state.**
+**It never owns time or transport** — no retries, no queues, no schedulers, no
+network of its own. Recording is the core; an optional mediation layer
+(`handle`/`dispatch`, `flow`) adds cross-domain invocation and saga bookkeeping,
+but everything telic invokes runs synchronously downstream of a call you made.
 
 ```ts
 import { intent, on, memory } from "@telic/core"
@@ -62,8 +65,9 @@ One declaration simultaneously yields:
   navigation auto-abandons via the Navigation API; modern browsers only (Baseline)
 - **Tiny, zero-dep core** — everything else (Sentry/analytics/User-Timing taps,
   XState/TanStack Query adapters, cross-tab transports, devtools) is a sub-path import
-- **Never executes** — retries, offline queues, and scheduling belong to your execution
-  layer; telic records, correlates, and remembers
+- **Never takes initiative** — retries, offline queues, and scheduling belong to your
+  execution layer; telic records, correlates, remembers, and only ever runs code
+  inside your own call stack
 
 ## Status
 

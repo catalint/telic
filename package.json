@@ -1,6 +1,9 @@
 {
-	"name": "telic",
+	"name": "@telic/core",
 	"version": "0.0.1",
+	"publishConfig": {
+		"access": "public"
+	},
 	"description": "A recorded intent + memory layer for frontends — begin/fulfilled/rejected/abandoned lifecycle with in-page queryable session memory. Design phase; API not yet published.",
 	"type": "module",
 	"main": "index.js",

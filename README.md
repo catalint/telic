@@ -17,7 +17,7 @@ frontend domains, and any AI agent that needs to know what the user was doing.
 **It records; it never executes, retries, or owns state.**
 
 ```ts
-import { intent, on, memory } from "telic/core"
+import { intent, on, memory } from "@telic/core"
 import { z } from "zod"
 
 const checkout = intent("checkout.submit", {

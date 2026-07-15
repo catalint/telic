@@ -1,0 +1,27 @@
+{
+	"name": "telic",
+	"version": "0.0.1",
+	"description": "A recorded intent + memory layer for frontends — begin/fulfilled/rejected/abandoned lifecycle with in-page queryable session memory. Design phase; API not yet published.",
+	"type": "module",
+	"main": "index.js",
+	"license": "MIT",
+	"author": "Catalin Tanasescu",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/catalint/telic.git"
+	},
+	"homepage": "https://github.com/catalint/telic#readme",
+	"bugs": "https://github.com/catalint/telic/issues",
+	"keywords": [
+		"intent",
+		"user-intent",
+		"state",
+		"observability",
+		"analytics",
+		"breadcrumbs",
+		"session-memory",
+		"micro-frontends",
+		"islands",
+		"ai-agents"
+	]
+}

@@ -1,5 +1,11 @@
 # telic
 
+[![CI](https://github.com/catalint/telic/actions/workflows/ci.yml/badge.svg)](https://github.com/catalint/telic/actions/workflows/ci.yml)
+[![npm @telic/core](https://img.shields.io/npm/v/%40telic%2Fcore?label=%40telic%2Fcore)](https://www.npmjs.com/package/@telic/core)
+[![npm @telic/react](https://img.shields.io/npm/v/%40telic%2Freact?label=%40telic%2Freact)](https://www.npmjs.com/package/@telic/react)
+[![npm @telic/lint](https://img.shields.io/npm/v/%40telic%2Flint?label=%40telic%2Flint)](https://www.npmjs.com/package/@telic/lint)
+[![license MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **A recorded intent + memory layer for frontends.**
 
 > A *telic* action is one with an intrinsic endpoint — exactly what a user intent is.

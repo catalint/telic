@@ -28,7 +28,7 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       - run: bun run size
-      - name: Guard — no workspace: protocol in publishable manifests
+      - name: "Guard — no workspace: ranges in publishable manifests"
         run: |
           for pkg in core react lint; do
             if node -p "JSON.stringify({...require('./packages/'+process.argv[1]+'/package.json').dependencies, ...require('./packages/'+process.argv[1]+'/package.json').peerDependencies})" "$pkg" | grep -q "workspace:"; then

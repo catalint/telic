@@ -1,30 +1,27 @@
 ---
 name: Bug report
-about: Something behaves differently than SPEC.md says it should
+about: Something doesn't behave the way you expected
 title: ""
 labels: bug
 ---
 
-## What happened
+## What happened / what you expected
 
-<!-- what you observed -->
+<!-- plain words are perfect -->
 
-## What the spec says
-
-<!-- telic's behavior is defined by clause-numbered specs (packages/*/SPEC.md).
-If you can name the clause you believe is violated (e.g. "S3.4"), triage is
-near-instant. If the spec is silent on your case, say so — spec gaps are bugs
-too. -->
-
-## Repro
+## Repro (if you have one)
 
 ```ts
-// minimal repro — createRuntime({ now: () => 1000, id: ... }) makes it deterministic;
-// @telic/core/testing has createTestRuntime for exactly this
+// even a rough sketch helps; a runnable snippet is gold.
+// tip: createTestRuntime from "@telic/core/testing" makes repros deterministic
 ```
 
 ## Environment
 
 - package + version (e.g. @telic/core 0.3.2):
-- runtime (browser/version, or bundler + target):
-- framework adapter involved (react / xstate / tanstack-query / none):
+- where it runs (browser / bundler / framework adapter):
+
+<!-- Optional power move: behavior is specified in numbered clauses in
+packages/*/SPEC.md — if you happen to spot the clause your case violates
+(or the case the spec is silent on), triage is near-instant. Absolutely
+not required. -->

@@ -410,9 +410,9 @@ Future work is demand-driven — open an issue.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: `bun run check`,
-specs are normative (tests name their clauses), design changes append to
-DECISIONS.md, and the initiative boundary is not up for negotiation.
+Issues, use cases, docs fixes, and PRs of every size are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for a quick start. You don't need to know
+the internals; open something rough and we'll shape it together.
 
 ## License
 

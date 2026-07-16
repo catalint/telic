@@ -383,6 +383,8 @@ The design is documented in full and travels with the package (in `packages/core
 | [APPROACHES.md](packages/core/APPROACHES.md) | **Which** — a per-axis decision guide when there's more than one reasonable option |
 | [DECISIONS.md](packages/core/DECISIONS.md) | **When / what changed** — the append-only log of design decisions and what was rejected |
 | [Recipes](packages/core/docs/recipes/) | **Worked examples** — full end-to-end wiring against a real vendor, starting with PostHog |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | **How to contribute** — quick start, what review looks at, and how we help |
+| [SECURITY.md](SECURITY.md) | **Reporting vulnerabilities** — private channels and the surfaces researchers should look at |
 
 ## Status
 

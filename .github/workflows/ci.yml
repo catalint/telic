@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Test
+        run: bun run test
+      - name: Build
+        run: bun run build
+      - name: Size gate
+        run: bun run size
+      - name: publint
+        working-directory: packages/core
+        run: bunx publint --strict
+      # ESM-only, bundler-first package (DECISIONS D6/D8): node10 and CJS
+      # consumers are out of scope by design, and the bundler-mode emit uses
+      # extensionless relative imports (node16/nodenext resolution is not part
+      # of the D19d compatibility contract — bundler resolution is).
+      - name: arethetypeswrong
+        working-directory: packages/core
+        run: bunx @arethetypeswrong/cli --pack . --profile esm-only --ignore-rules internal-resolution-error
+
+  consumer-matrix:
+    runs-on: ubuntu-latest
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        # The emitted .d.ts must compile on the whole support floor (TS 5.5+)
+        # up to the latest release; each entry also re-checks IntentRegistry
+        # augmentation across the compiled declaration boundary.
+        typescript: ["5.5.4", "5.9.2", "6.0.3", "latest"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Consumer typecheck (TS ${{ matrix.typescript }})
+        env:
+          TS_VERSION: ${{ matrix.typescript }}
+        run: bun ci/consumer-smoke/run.ts "$TS_VERSION"

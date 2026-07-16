@@ -402,6 +402,12 @@ Future work is demand-driven — open an issue.
   duplicate declarations, scope-ownership violations, and dead contracts (`command()` with no
   `handle()`, or vice versa).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) — the short version: `bun run check`,
+specs are normative (tests name their clauses), design changes append to
+DECISIONS.md, and the initiative boundary is not up for negotiation.
+
 ## License
 
 [MIT](LICENSE) © Catalin Tanasescu

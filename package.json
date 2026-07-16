@@ -9,7 +9,8 @@
 		"typecheck": "bun run --filter='*' typecheck",
 		"test": "bun run --filter='*' test",
 		"build": "bun run --filter '@telic/core' build && bun run --filter '@telic/react' build && bun run --filter '@telic/lint' build",
-		"size": "bun run --filter='*' size"
+		"size": "bun run --filter='*' size",
+		"check": "bun run build && bun run typecheck && bun run test && bun run size"
 	},
 	"description": "telic monorepo — a recorded intent + memory layer for frontends",
 	"license": "MIT",

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Docs — SPEC / DESIGN / PATTERNS / APPROACHES / DECISIONS
+    url: https://github.com/catalint/telic/tree/main/packages/core
+    about: The five documents answer most "why does it work this way" questions.

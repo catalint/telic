@@ -88,7 +88,7 @@ under the same once/consent rules as `map` (S17.2):
 		// AP7: identity comes from app context AT THE CALL SITE — NEVER
 		// from mark.payload / mark.outcome. auth.login's payload might
 		// carry { method: "pin" }; it must never carry an email or user
-		// id in the first place — redaction is write-time and
+		// id in the first place — a write-time `transform` is
 		// per-intent, and identify() has no business reading back
 		// something the tape was designed to keep off it.
 		const user = getCurrentUser()

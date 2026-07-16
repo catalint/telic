@@ -38,6 +38,35 @@ framework with opinions about when things happen. If a handler wants retries
 or offline queues, it uses an execution library (TanStack Query) *inside*
 itself; telic records and correlates, the execution layer executes.
 
+## The data boundary (the initiative boundary's twin)
+
+**telic records and honors policy; it never authors, alters, or overrides the
+data it moves.** The initiative boundary says telic never *acts* on its own; this
+is the same rule pointed at data. telic may omit a value, gate where it travels,
+or leave a typed marker that omission happened (`"[private]"`) — but it never
+transforms the *semantic content* of a value it records, except through a
+caller-supplied `transform`. The only entity that alters content is the caller.
+
+`exposure` is a caller policy telic is bound to honor and forbidden to override:
+never guess it when the live record is gone (fail closed — do not default to the
+most-exposing value), never relax it, never upgrade a `local` child's value into
+a non-local parent by aggregation. `transform` is a purpose-neutral mapping the
+caller fills — telic offers the seam, the caller decides what it does. That is why
+the field is named for its mechanism, not for redaction: privacy is one thing a
+caller may do with it, not a job telic performs. The identity boundary — "no raw
+identities on the tape, classifications only" (PATTERNS AP7) — is likewise the
+caller's to hold. telic makes no independent *security* promise, only a *fidelity*
+one: it will not move your data further than you told it to, and it will not
+invent a policy when it has lost yours.
+
+Why this specific line: a layer that decides data's fate on its own becomes an
+editor with opinions, exactly as a layer that decides *when* things run becomes a
+framework with opinions. Both drifts end the same way — the substrate stops being
+trustworthy because it started making calls its callers didn't. Where telic has a
+gap in a caller's stated policy, it surfaces the gap loudly (`missing-exposure`)
+rather than guessing — the same diagnostics-as-linters posture as the initiative
+boundary's setter-name nudge.
+
 ## Why the lifecycle is the semantic enforcement
 
 Redux's history is the cautionary tale this library is built against. Redux
@@ -135,3 +164,5 @@ authoritative — the server's idempotency is what makes replays safe.
 | Double-bookkeeping drift (intent says active, state says done) | Manual begin/settle pairs exist | Prefer `run()`/handlers/adapters; auto-abandon (unmount/navigation/dispose); double-settle diagnostics |
 | Client tape is not durable truth | A tab can die mid-flight | AttemptIds double as Idempotency-Keys so the server stays authoritative; flow resume re-verifies via skip semantics |
 | Bundle creep | Every feature wants into core | Single-file size-gated core; everything else is a sub-path; taps/transports unreachable from a core import |
+| Exposure is recoverable only from `begun` marks | Once a settled attempt is LRU-evicted, its `exposure` is no longer re-derivable | The data boundary requires a lost policy to fail closed, not default to `"full"` — [#5](https://github.com/catalint/telic/issues/5) tracks the fix; today's fallback is a KNOWN leak, not a settled design |
+| `flow()` can upgrade a `local` child's reach | Aggregating child outcomes into the parent's fulfilled mark is convenient for downstream steps | The parent must carry the strictest child exposure (never upgrade) — [#8](https://github.com/catalint/telic/issues/8) tracks the fix; today's aggregation is a KNOWN leak |

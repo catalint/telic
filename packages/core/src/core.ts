@@ -178,7 +178,7 @@ type StoredIntentConfig = {
 	readonly payload?: StandardSchemaV1;
 	readonly fulfilled?: StandardSchemaV1;
 	readonly rejected?: StandardSchemaV1;
-	readonly redact?: (payload: unknown) => unknown;
+	readonly transform?: (payload: unknown) => unknown;
 	readonly exposure?: Exposure;
 	readonly tags?: readonly string[];
 };
@@ -629,19 +629,20 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 		// re-declaration the freshly-passed config is ignored for BOTH the
 		// diagnostic below and the returned handle, so describe() (which reads the
 		// frozen first meta) and the live handle can never diverge — a second call
-		// with a different exposure/redact only shapes the static type.
+		// with a different exposure/transform only shapes the static type.
 		const effectiveConfig: IntentConfig<PS, FS, RS> | undefined = alreadyDeclared
 			? asTyped<IntentConfig<PS, FS, RS> | undefined>(declarations.get(name)?.config)
 			: config;
 
 		// Same diagnostics-as-linters philosophy as setter-like-name (S1.5): under
-		// strictPrivacy, a payload schema with no explicit exposure AND no redact
-		// leaks — nudge once per name at declaration time. Recording proceeds.
+		// strictPrivacy, a payload schema with no explicit exposure has undeclared
+		// reach — nudge once per name at declaration time. A `transform` does NOT
+		// suppress this: it's a payload mapping, not a reach declaration (D28/D29).
+		// Recording proceeds.
 		if (
 			strictPrivacy &&
 			effectiveConfig?.payload !== undefined &&
 			effectiveConfig?.exposure === undefined &&
-			effectiveConfig?.redact === undefined &&
 			!missingExposureWarnedNames.has(name)
 		) {
 			missingExposureWarnedNames.add(name);
@@ -666,7 +667,7 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 
 		const payloadSchema: StandardSchemaV1 | undefined = config?.payload;
 		const fulfilledSchema: StandardSchemaV1 | undefined = config?.fulfilled;
-		const redact = config?.redact;
+		const transform = config?.transform;
 		const exposure: Exposure = config?.exposure ?? "full";
 
 		function beginWith(rawPayload: unknown, beginOpts: BeginOptions | undefined): Attempt<P, F, R> {
@@ -713,8 +714,8 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 			const recordedPayload =
 				exposure === "private"
 					? "[private]"
-					: redact !== undefined
-						? redact(asTyped<P>(rawPayload))
+					: transform !== undefined
+						? transform(asTyped<P>(rawPayload))
 						: rawPayload;
 			const beginSeq = nextSeq();
 

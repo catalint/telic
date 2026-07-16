@@ -78,7 +78,7 @@ within your own domain (AP4).
 | | Pros | Cons | Choose when |
 |---|---|---|---|
 | **In-memory (default)** | Zero setup; nothing sensitive ever touches storage | Reload wipes the tape — `flow` resume is same-session only | Default; anything whose payloads are sensitive (pair with `exposure: "local"`/`"private"`) |
-| **Persistence tap** *(planned)* | Cross-reload memory; resumable flows after a crash/reload; `origin.restored` marks distinguish restored context | Storage classification/consent duties; redaction hygiene becomes load-bearing | Long flows worth resuming across reloads — the checkout case |
+| **Persistence tap** *(planned)* | Cross-reload memory; resumable flows after a crash/reload; `origin.restored` marks distinguish restored context | Storage classification/consent duties; `transform`/`exposure` hygiene becomes load-bearing | Long flows worth resuming across reloads — the checkout case |
 
 ## 9. Consumption surfaces (not either/or — these stack)
 
@@ -87,4 +87,4 @@ within your own domain (AP4).
 | **Taps** (Sentry, analytics, User-Timing, console) | Push every mark into an external system as it happens | Taps run synchronously — keep them cheap; heavy work self-defers |
 | **Memory queries** (`last`/`has`/`inProgress`/`attempts`) | The running app asking about behavior ("already tried X?") | Secondary, degradable surfaces only — never primary UI correctness (AP2) |
 | **Projections** (`project`) | Continuously-folded derived state (counters, funnels, devtools models) | Reducers must be cheap and total; a throwing reducer skips that mark |
-| **Agent surface** (`window.__INTENT_MEMORY__`) | Machine-legible read access for copilots, test explorers, WebMCP pairings | Read-only by design; everything on it is post-redaction — keep `redact`/`exposure` honest upstream |
+| **Agent surface** (`window.__INTENT_MEMORY__`) | Machine-legible read access for copilots, test explorers, WebMCP pairings | Read-only by design; everything on it is post-transform — keep `transform`/`exposure` honest upstream |

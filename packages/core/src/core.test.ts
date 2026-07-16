@@ -291,7 +291,7 @@ describe("S1: declarations", () => {
 		expect(rt.memory.marks().filter(ofKind("begun")).length).toBe(2);
 	});
 
-	it("S1.5: given strictPrivacy, when an intent declares a payload schema with no exposure or redact, then a missing-exposure diagnostic fires once per name", () => {
+	it("S1.5: given strictPrivacy, when an intent declares a payload schema with no explicit exposure, then a missing-exposure diagnostic fires once per name", () => {
 		const { rt, diagnostics } = makeRuntime({ strictPrivacy: true });
 		rt.intent("billing.charge", { payload: schema((value) => value) });
 		// Re-declaring the same name must not re-emit the nudge (once per name).
@@ -301,7 +301,7 @@ describe("S1: declarations", () => {
 		expect(only(missing).intent).toBe("billing.charge");
 	});
 
-	it("S1.5: given strictPrivacy is off (default), when a payload schema lacks exposure and redact, then no missing-exposure diagnostic fires", () => {
+	it("S1.5: given strictPrivacy is off (default), when a payload schema lacks an explicit exposure, then no missing-exposure diagnostic fires", () => {
 		const { rt, diagnostics } = makeRuntime();
 		rt.intent("billing.charge", { payload: schema((value) => value) });
 		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(0);
@@ -313,10 +313,10 @@ describe("S1: declarations", () => {
 		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(0);
 	});
 
-	it("S1.5: given strictPrivacy, when a redact is set, then missing-exposure is suppressed", () => {
+	it("S1.5: given strictPrivacy, when a transform is set but no explicit exposure, then missing-exposure STILL fires (a transform is a payload mapping, not a reach declaration — D29)", () => {
 		const { rt, diagnostics } = makeRuntime({ strictPrivacy: true });
-		rt.intent("billing.charge", { payload: schema((value) => value), redact: (value) => value });
-		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(0);
+		rt.intent("billing.charge", { payload: schema((value) => value), transform: (value) => value });
+		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(1);
 	});
 
 	it("S1.5: given strictPrivacy, when an intent has no payload schema, then missing-exposure does not fire", () => {
@@ -355,11 +355,11 @@ describe("S2: begin()", () => {
 		expect(begun.attempt).toBe(attempt.id);
 	});
 
-	it("S2.1: given a redact config, when begun, then the mark payload is redacted but the handle keeps the raw payload", () => {
+	it("S2.1: given a transform config, when begun, then the mark payload is the transformed value but the handle keeps the raw payload", () => {
 		const { rt } = makeRuntime();
 		const flow = rt.intent("profile.email", {
 			payload: credentialsSchema,
-			redact: (payload) => ({ email: payload.email, token: "[redacted]" }),
+			transform: (payload) => ({ email: payload.email, token: "[redacted]" }),
 		});
 		const attempt = flow.begin({ email: "u@x.com", token: "secret" });
 		const begun = only(rt.memory.marks().filter(ofKind("begun")));
@@ -367,12 +367,12 @@ describe("S2: begin()", () => {
 		expect(attempt.payload).toEqual({ email: "u@x.com", token: "secret" });
 	});
 
-	it('S2.1: given exposure "private", when begun, then the mark payload is "[private]" regardless of redact and the handle keeps raw', () => {
+	it('S2.1: given exposure "private", when begun, then the mark payload is "[private]" regardless of transform and the handle keeps raw', () => {
 		const { rt } = makeRuntime();
 		const flow = rt.intent("vault.secret", {
 			payload: credentialsSchema,
 			exposure: "private",
-			redact: (payload) => ({ email: payload.email }),
+			transform: (payload) => ({ email: payload.email }),
 		});
 		const attempt = flow.begin({ email: "u@x.com", token: "top-secret" });
 		const begun = only(rt.memory.marks().filter(ofKind("begun")));
@@ -1317,7 +1317,7 @@ describe("S12: describe()", () => {
 		rt.intent("vault.secret", { exposure: "private", payload: schema((value) => value) });
 		// Re-declare with NO exposure. describe() keeps the first config (S12.1);
 		// so must the returned handle — otherwise begin() would record the RAW
-		// payload while describe() still advertised "private" (redaction bypass).
+		// payload while describe() still advertised "private" (recording-config bypass).
 		const second = rt.intent("vault.secret", { payload: schema((value) => value) });
 		second.begin("TOP-SECRET-RAW");
 		const begun = only(rt.memory.marks({ pattern: "vault.secret" }).filter(ofKind("begun")));

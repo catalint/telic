@@ -285,3 +285,41 @@ one-off: it feeds the Copilot review instructions and is the reason the crash
 class can't silently regress. Rejected: sanitizing/rejecting the offending key
 names (telic does not own its callers' state or intent taxonomies — a state
 literally named `constructor` is valid and must simply be handled).
+
+**D28. The data boundary — telic honors data policy, it never authors or
+overrides it (2026-07-16).** The twin of the initiative boundary (never own time
+or transport), pointed at data instead of action: telic records, gates, and
+surfaces gaps loudly, but it never transforms the semantic content of a value it
+moves (except through a caller-supplied mapping), never decides where data may
+travel on the caller's behalf, and never overrides or relaxes a reach the caller
+declared. `exposure` is a caller policy telic must honor — and must fail CLOSED on
+when it cannot recover it, never defaulting to the most-exposing value. The
+content mapping is a caller-owned seam telic only invokes. The security boundary
+(no raw identities on the tape — AP7) stays with the caller; telic makes only a
+FIDELITY promise: never move data further than the caller allowed, and never
+invent a policy when it has lost the caller's. Consequences of this entry: the
+`redact`→`transform` rename and the `missing-exposure` decoupling (D29), and the
+fail-closed / never-upgrade fixes owed to the two open exposure leaks (#5, #8,
+listed under DESIGN "Risks we carry knowingly"). Rejected: framing telic as a
+privacy/security layer — it cannot keep a leak-proof promise and should not imply
+one (a three-level enum graded as a security boundary that leaks invites misplaced
+trust); a built-in PII detector/scrubber — that is telic deciding for the caller,
+the exact drift this boundary forbids. DESIGN: "The data boundary" section.
+
+**D29. `redact` renamed to `transform`; `missing-exposure` keys off `exposure`
+alone (2026-07-16).** The config field was named for one use (PII redaction) of a
+mechanism that is general — a write-time payload→mark mapping equally good for
+downsampling, normalization, and classification. Naming the purpose (a) understated
+the field and (b) made `exposure` + `redact` both read as "the privacy layer",
+conflating a reach policy with a content mapping. Renamed to `transform` (the
+mechanism, per D28). Because a `transform` is no longer a privacy signal, its
+presence no longer suppresses the strictPrivacy `missing-exposure` diagnostic
+(S1.5): the gate narrows from "no `exposure` AND no `redact`" to "no explicit
+`exposure`", which also makes the diagnostic's name honest. Scope: payload-only,
+unchanged — outcomes are still recorded as-is; a symmetric outcome mapping is a
+separate future decision, deliberately deferred. BREAKING (field rename + a
+strictPrivacy firing that was previously silent); adoption is ~zero, so a clean
+rename with no deprecated alias. Rejected: `recordAs`/`project` (over-claim mark-
+or projection-wide when the seam is payload-only); keeping `redact` (purpose-laden,
+sustains the privacy-layer conflation D28 unwinds); a `redact` alias (debt for no
+adopter). SPEC: S1.5 rewritten, S2.1 reworded; type `IntentConfig.transform`.

@@ -281,7 +281,7 @@ mutations have a lifecycle (`idle/pending/paused/success/error`), a subscribable
 the cache represents the five as one thing the user was trying to do. Mutation keys are
 optional and op-shaped, the cache is garbage-collected working state (not session memory),
 there is no `abandoned` (paused means "no network", not "user walked away"), and there are no
-analytics/breadcrumb taps, no redaction, no agent surface. `telic` doesn't compete with the
+analytics/breadcrumb taps, no write-time payload transform, no agent surface. `telic` doesn't compete with the
 execution layer — the `adapters/tanstack-query` adapter links every mutation to its causing
 attempt via `MutationCache.subscribe`, and `telic` itself never executes or retries anything.
 
@@ -300,7 +300,7 @@ the optional `taps/otel` exports attempts as spans — same data, both postures.
 Genuinely close for the *recording* half — native named marks with `detail` payloads,
 queryable via `performance.getEntriesByName`, and RUM vendors ingest them automatically.
 What's missing is meaning: a measure is a duration pair with no outcome — nothing can be
-rejected or abandoned, nothing is typed, nothing is redacted, and the buffer semantics are
+rejected or abandoned, nothing is typed, nothing is transformed, and the buffer semantics are
 tuned for timing, not memory. So `telic` doesn't compete here either — the `taps/user-timing`
 tap mirrors every attempt into `performance.mark`/`measure`, which gives you the DevTools
 Performance panel and your RUM vendor's custom-metrics pipeline for free.

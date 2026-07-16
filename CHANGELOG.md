@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+**BREAKING — the data boundary (D28) + `redact` → `transform` (D29):**
+
+- **Breaking (core):** `IntentConfig.redact` is renamed to `transform` — a purpose-neutral, write-time payload→mark mapping (redaction is one use; downsampling / normalization / classification are others), payload-only. Signature is unchanged; rename the field at call sites.
+- **Breaking (core, `strictPrivacy`):** the `missing-exposure` diagnostic now fires whenever a payload schema is declared without an explicit `exposure`; a `transform` no longer suppresses it (it's a mapping, not a reach declaration). Only affects runtimes with `strictPrivacy: true`.
+- **Docs:** DESIGN gains "The data boundary" — the twin of the initiative boundary: telic records and honors data policy, it never authors, alters, or overrides it. `exposure` is a caller policy telic must honor and fail *closed* on; the identity boundary (no raw identities on the tape) is the caller's. The two open exposure leaks (#5, #8) are now listed under DESIGN "Risks we carry knowingly" as KNOWN, not fixed.
+
 Whole-monorepo review pass — confirmed fixes (all behind the same `bun run check` gate; SPEC clauses + DECISIONS entries added in the same change):
 
-- **Fix (core, privacy — HIGH):** a runtime-level `intent()` re-declaration returned a handle built from the SECOND config while `describe()` still reported the first — so re-declaring a name with a weaker `exposure`/`redact` could record RAW payloads that a privacy audit reading `describe()` could not see. The returned handle (and the `missing-exposure` diagnostic) now use the first declaration's config, matching the module-level path. First-config-wins is now a behavior invariant, not just a descriptor one (D26, SPEC S1 amendment).
+- **Fix (core, privacy — HIGH):** a runtime-level `intent()` re-declaration returned a handle built from the SECOND config while `describe()` still reported the first — so re-declaring a name with a weaker `exposure`/`transform` could record RAW payloads that a privacy audit reading `describe()` could not see. The returned handle (and the `missing-exposure` diagnostic) now use the first declaration's config, matching the module-level path. First-config-wins is now a behavior invariant, not just a descriptor one (D26, SPEC S1 amendment).
 - **Fix (core, crash — HIGH):** `settleFromMachine` (xstate adapter) indexed its settle-map with a raw machine state name; a state named `toString`/`constructor`/`__proto__` resolved an inherited `Object.prototype` member, bypassed the undefined guard, crashed, and stranded the attempt. The lookup is now own-property-guarded; unmapped states of any name are a no-op (D27, SPEC S25.5).
 - **Fix (core, otel tap):** a non-plain-object note (Date, RegExp, Map, class instance) flattened to an empty span-event attribute bag, dropping its data; such values now take the JSON fallback. A plain `{}` still flattens to an empty event (SPEC S27.4).
 - **Hardening (core, flow):** the `flow()` outcome accumulator is prototype-free, so a step named `__proto__`/`constructor` is an ordinary key rather than a prototype mutation (D27).

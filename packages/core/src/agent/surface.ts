@@ -8,7 +8,7 @@ import type { AttemptView, IntentDescriptor, Mark, MemorySnapshot, Runtime, Seq 
 
 /**
  * Pure delegations to `Runtime`/`Memory` — every returned value is already
- * frozen/redacted by core semantics (S14.2). `marks()`/`inProgress()` are
+ * frozen/transformed by core semantics (S14.2). `marks()`/`inProgress()` are
  * NOT additionally filtered here; the facade is a local reader.
  */
 export type AgentSurface = {

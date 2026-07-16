@@ -18,17 +18,22 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
    `change` (case-insensitive) → diagnostic `setter-like-name` (once per name).
    Recording proceeds normally — it's a nudge, not a gate.
 5. Under `strictPrivacy: true` (RuntimeOptions): declaring an intent with a
-   payload schema but NO explicit `exposure` and NO `redact` → diagnostic
-   `missing-exposure` (once per name). Same diagnostics-as-linters philosophy
-   as S1.4: redaction that depends on authors remembering it will leak;
-   the nudge fires at declaration time. Recording proceeds normally.
+   payload schema but NO explicit `exposure` → diagnostic `missing-exposure`
+   (once per name). `exposure` is the reach declaration telic honors; a
+   `transform` is a payload mapping, NOT a reach claim, so its presence does
+   NOT suppress this diagnostic (narrowed in D29 — it formerly also required
+   NO `transform`). Same diagnostics-as-linters philosophy as S1.4: reach that
+   depends on authors remembering it will leak; the nudge fires at declaration
+   time. Recording proceeds normally.
 
 ## S2. begin()
 
-1. Returns an `Attempt`. Emits a `begun` mark carrying the REDACTED payload
-   (`config.redact` applied when present; raw payload only on the handle).
-   `exposure: "private"` intents record payload `"[private]"` regardless of
-   redact.
+1. Returns an `Attempt`. Emits a `begun` mark carrying the RECORDED payload
+   (`config.transform` applied when present; raw payload only on the handle).
+   `transform` is a purpose-neutral payload→mark mapping (redaction is one use;
+   downsampling/normalization/classification are others) and is payload-only —
+   outcomes are recorded as-is. `exposure: "private"` intents record payload
+   `"[private]"` regardless of `transform`.
 2. Payload validation: if a payload schema exists, validate synchronously via
    `schema["~standard"].validate`. On issues → diagnostic `invalid-payload`;
    the begin STILL records (record-first: observability must not break the
@@ -291,7 +296,7 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
    globalThis, default key: "__INTENT_MEMORY__"); returns an uninstall fn.
 2. Facade: `{ version: 1, snapshot(), marks(sinceSeq?), inProgress(),
    describe() }` — pure delegations to the runtime; everything returned is
-   already frozen/redacted by core semantics (snapshot excludes
+   already frozen/transformed by core semantics (snapshot excludes
    exposure:"local" per S6.7; marks()/inProgress() delegate to memory and are
    NOT additionally filtered — the facade is a local reader).
 3. Installing over an existing property: overwrite silently only when the
@@ -441,7 +446,7 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    Mark | undefined` and `parseWirePayload(json: string): readonly Mark[]`
    (tolerant: skips invalid entries, returns [] on garbage). Validates kind
    discriminants, required fields per kind, primitive types; payload/outcome/
-   reason/data pass through as unknown (they are already post-redaction).
+   reason/data pass through as unknown (they are already post-transform).
 2. `serializeMarks(marks): string` — JSON, versioned envelope `{ v: 1, marks }`;
    parse rejects unknown versions (forward-compat: better to drop than
    misread).
@@ -495,7 +500,7 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    ONCE PER NAME per runtime (not per re-declaration) — hot-module-reload
    re-evaluation must not train developers to ignore diagnostics. First
    declaration's config still wins (S12.1 unchanged): the handle RETURNED by a
-   re-declaration records with the FIRST declaration's config (exposure, redact,
+   re-declaration records with the FIRST declaration's config (exposure, transform,
    tags, schemas), NOT the freshly-passed one — so `describe()` (which reads the
    frozen first meta) and the live handle can never diverge (D26). The
    `missing-exposure` diagnostic (S1.5) is likewise evaluated against the first

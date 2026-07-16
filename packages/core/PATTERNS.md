@@ -114,8 +114,8 @@ tells you exactly which steps committed.
 `window.__INTENT_MEMORY__.inProgress()` answers "what is the user mid-way
 through"; `describe()` answers "what can be intended here". Pair with WebMCP
 tools (what an agent can *do*) for the full picture. Payloads are already
-redacted at write time — the surface is safe by construction, but keep
-`exposure`/`redact` honest for anything sensitive.
+transformed at write time — the surface is a read-only local reader, but keep
+`exposure` and any `transform` honest upstream for anything sensitive.
 
 ### P10. Handler availability in a code-split world
 
@@ -238,16 +238,17 @@ attempts. Exception that is NOT a bug: begin-then-redirect where abandonment
 is the *true semantic* (OAuth redirect — the outcome genuinely resolves
 elsewhere).
 
-### AP7. Recording secrets and trusting redaction later
+### AP7. Putting secrets on the tape and trusting a `transform` to scrub them
 
 ```ts
 // ❌ raw PII into the payload, hoping a tap filters it
 login.begin({ email: user.email })
 ```
 
-Failure: redaction is write-time and per-intent (`redact`/`exposure`) — but
-the honest fix is upstream: design payloads to carry classifications, not
-identities (`{ method: "email" }`, not the address). Everything downstream
+Failure: a write-time `transform` (with `exposure`) can shrink what's recorded,
+but the honest fix is upstream: design payloads to carry classifications, not
+identities (`{ method: "email" }`, not the address). The identity boundary is
+yours, not telic's (see DESIGN, "The data boundary") — everything downstream
 (breadcrumbs, storage, agents, transports) inherits whatever you let onto the
 tape.
 

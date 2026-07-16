@@ -11,10 +11,12 @@ reports. You'll get an acknowledgment within a few days.
 
 The most security-relevant surfaces, in order of interest:
 
-- **The tape's redaction guarantees** — write-time redaction (`redact`,
-  `exposure`) claims that raw payloads never reach taps, storage, transports,
-  or the agent surface. Any path that leaks an un-redacted payload past the
-  tape is a vulnerability.
+- **The tape's exposure fidelity** — telic must honor the `exposure` a caller
+  declared: `local` payloads never reach persistence, transports, or the agent
+  surface, and `private` payloads travel only as the `"[private]"` placeholder.
+  A write-time `transform` further shrinks what's recorded. Any path that moves
+  a payload further than its declared `exposure` allows — including a lost or
+  LRU-evicted exposure defaulting to a wider reach — is a vulnerability.
 - **Transports** — `transports/post-message` requires explicit origin
   allow-listing and rejects `targetOrigin: "*"`; incoming payloads on all
   transports are wire-validated before ingestion. Bypasses of either are

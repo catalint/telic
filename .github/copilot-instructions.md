@@ -26,9 +26,12 @@ clause-numbered specs (`packages/*/SPEC.md`); design boundaries live in
    whose names reference clause numbers (e.g. "S3.4: …"). Point out gaps
    gently — the maintainer often shapes clause wording during review.
 5. **Privacy rules on the tape:** payloads must never carry raw identities
-   (emails, phone numbers, names) — classifications only (see PATTERNS.md
-   AP7). Redaction is write-time; flag anything that could put PII onto
-   marks, into storage, transports, or the agent surface.
+   (emails, phone numbers, names) — classifications only (see PATTERNS.md AP7).
+   The identity boundary is the CALLER's, not telic's (see DESIGN "The data
+   boundary"): a write-time `transform` (formerly `redact`) or `exposure`
+   shrinks what's recorded but is no substitute for keeping PII off the payload.
+   Flag anything that could put PII onto marks, into storage, transports, or the
+   agent surface.
 6. **SSR/environment safety:** no `window`/`document`/`navigation`/storage
    access at module scope, ever. Environment must be feature-detected at call
    time and injectable for tests.

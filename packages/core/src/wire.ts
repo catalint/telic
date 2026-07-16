@@ -3,7 +3,7 @@
  *
  * The serialization boundary for persistence (S18) and future transports. Core
  * never imports this module; this module never imports core. `parseMark` /
- * `parseWirePayload` are tolerant readers — post-redaction payloads
+ * `parseWirePayload` are tolerant readers — post-transform payloads
  * (`payload`/`outcome`/`reason`/`data`) pass through as `unknown`; structured
  * fields (`kind`, `exposure`, `abandon`, `ref`, `origin`) are validated so the
  * result is a REAL, branded `Mark`.

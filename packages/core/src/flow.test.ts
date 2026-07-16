@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import type { Diagnostic, Mark, Runtime } from "./core";
-import { configureDefaultRuntime, currentRuntime, intent, memory } from "./core";
-import type { FlowContext } from "./flow";
-import { flow, step } from "./flow";
-import type { StandardSchemaV1 } from "./standard-schema";
+import type { Diagnostic, Mark, Runtime } from "./core.js";
+import { configureDefaultRuntime, currentRuntime, intent, memory } from "./core.js";
+import type { FlowContext } from "./flow.js";
+import { flow, step } from "./flow.js";
+import type { StandardSchemaV1 } from "./standard-schema.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; duplicated per file by design)

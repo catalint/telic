@@ -5,17 +5,17 @@
  * discoverable alias for existing consumers. Identical semantics — no @sentry
  * import, no runtime dependencies.
  */
-import type { Tap } from "../types";
-import type { BreadcrumbTapOptions } from "./breadcrumbs";
-import { createBreadcrumbTap } from "./breadcrumbs";
+import type { Tap } from "../types.js";
+import type { BreadcrumbTapOptions } from "./breadcrumbs.js";
+import { createBreadcrumbTap } from "./breadcrumbs.js";
 
 export type {
 	BreadcrumbLevel,
 	BreadcrumbLike,
 	BreadcrumbTapOptions,
 	IntentContext,
-} from "./breadcrumbs";
-export { intentContext } from "./breadcrumbs";
+} from "./breadcrumbs.js";
+export { intentContext } from "./breadcrumbs.js";
 
 /** Alias of {@link createBreadcrumbTap} — the Sentry-named preset. */
 export const createSentryBreadcrumbTap: (opts: BreadcrumbTapOptions) => Tap = createBreadcrumbTap;

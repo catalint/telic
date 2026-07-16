@@ -10,8 +10,8 @@
  * SSR-safe (no module-scope environment access).
  */
 
-import { type CompiledPattern, compilePattern, matchesPattern } from "../pattern";
-import type { AttemptView, IntentPattern, Mark, MarkKind, Tap } from "../types";
+import { type CompiledPattern, compilePattern, matchesPattern } from "../pattern.js";
+import type { AttemptView, IntentPattern, Mark, MarkKind, Tap } from "../types.js";
 
 /** Vendor-agnostic analytics event produced by a rule's `map`. */
 export type AnalyticsEvent = {
@@ -43,6 +43,24 @@ export type AnalyticsRule = {
 	readonly emit?: (mark: Mark, view: AttemptView | undefined) => void;
 };
 
+/** What the tap decided to do with a matching (rule, mark) pair (S17.7). */
+export type AnalyticsTraceAction =
+	| "sent"
+	| "emitted"
+	| "deduped"
+	| "denied"
+	| "buffered"
+	| "flushed"
+	| "skipped-when";
+
+/** One rule/mark decision record for the parity trace hook (S17.7). */
+export type AnalyticsTraceEvent = {
+	readonly mark: Mark;
+	/** Index into `opts.rules` of the rule this decision belongs to. */
+	readonly ruleIndex: number;
+	readonly action: AnalyticsTraceAction;
+};
+
 export type AnalyticsTapOptions = {
 	readonly send: (event: AnalyticsEvent) => void;
 	/** Consent gate, evaluated per matching mark. */
@@ -51,6 +69,8 @@ export type AnalyticsTapOptions = {
 	readonly whileDenied?: "drop" | "buffer";
 	readonly rules: readonly AnalyticsRule[];
 	readonly dedupe?: AnalyticsDedupe;
+	/** Called for every rule/mark decision (S17.7) — the CI-assertable migration-parity record. Zero cost when absent. */
+	readonly trace?: (event: AnalyticsTraceEvent) => void;
 };
 
 /** A once-key plus whether it is persistable (per-intent keys are). */
@@ -65,12 +85,15 @@ type ResolvedAction = {
 	readonly runEmit: (() => void) | undefined;
 	readonly key: string | undefined;
 	readonly persist: boolean;
+	/** Carried so buffered actions stay traceable at flush time (S17.7). */
+	readonly mark: Mark;
+	readonly ruleIndex: number;
 };
 
 const BUFFER_CAP = 50;
 
 export function createAnalyticsTap(opts: AnalyticsTapOptions): Tap & { recheck(): void } {
-	const { send, consent, rules, dedupe } = opts;
+	const { send, consent, rules, dedupe, trace } = opts;
 	const whileDenied: "drop" | "buffer" = opts.whileDenied ?? "drop";
 
 	for (const rule of rules) {
@@ -120,23 +143,37 @@ export function createAnalyticsTap(opts: AnalyticsTapOptions): Tap & { recheck()
 			return consentState;
 		};
 
-		for (const { rule, pattern } of compiledRules) {
+		for (const [ruleIndex, { rule, pattern }] of compiledRules.entries()) {
 			if (rule.kind !== mark.kind) continue;
 			if (!matchesPattern(pattern, mark.intent)) continue;
-			if (rule.when !== undefined && !rule.when(mark, view)) continue;
+			if (rule.when !== undefined && !rule.when(mark, view)) {
+				trace?.({ mark, ruleIndex, action: "skipped-when" });
+				continue;
+			}
 
 			const { key, persist } = onceKeyFor(rule, mark);
-			if (key !== undefined && consumed.has(key)) continue;
+			if (key !== undefined && consumed.has(key)) {
+				trace?.({ mark, ruleIndex, action: "deduped" });
+				continue;
+			}
 
 			const allowed = granted();
-			if (!allowed && whileDenied !== "buffer") continue;
+			if (!allowed && whileDenied !== "buffer") {
+				trace?.({ mark, ruleIndex, action: "denied" });
+				continue;
+			}
 
 			const event = rule.map !== undefined ? rule.map(mark, view) : undefined;
 			if (event === undefined && rule.emit === undefined) continue;
 
-			const action = resolveAction(rule, mark, view, event, key, persist);
-			if (allowed) fire(action);
-			else enqueue(action);
+			const action = resolveAction(rule, mark, view, event, key, persist, ruleIndex);
+			if (allowed) {
+				fire(action);
+				trace?.({ mark, ruleIndex, action: event !== undefined ? "sent" : "emitted" });
+			} else {
+				enqueue(action);
+				trace?.({ mark, ruleIndex, action: "buffered" });
+			}
 		}
 	}
 
@@ -144,8 +181,13 @@ export function createAnalyticsTap(opts: AnalyticsTapOptions): Tap & { recheck()
 		if (!consent()) return;
 		const pending = buffer.splice(0, buffer.length);
 		for (const action of pending) {
-			if (action.key !== undefined && consumed.has(action.key)) continue;
+			if (action.key !== undefined && consumed.has(action.key)) {
+				// A live mark consumed the key meanwhile — the stale action is a dedupe (S17.4/S17.7).
+				trace?.({ mark: action.mark, ruleIndex: action.ruleIndex, action: "deduped" });
+				continue;
+			}
 			fire(action);
+			trace?.({ mark: action.mark, ruleIndex: action.ruleIndex, action: "flushed" });
 		}
 	}
 
@@ -167,6 +209,7 @@ function resolveAction(
 	event: AnalyticsEvent | undefined,
 	key: string | undefined,
 	persist: boolean,
+	ruleIndex: number,
 ): ResolvedAction {
 	const emitFn = rule.emit;
 	const runEmit: (() => void) | undefined =
@@ -175,5 +218,5 @@ function resolveAction(
 					emitFn(mark, view);
 				}
 			: undefined;
-	return { event, runEmit, key, persist };
+	return { event, runEmit, key, persist, mark, ruleIndex };
 }

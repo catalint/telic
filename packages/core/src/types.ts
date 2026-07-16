@@ -4,7 +4,7 @@
  * Types only — the runtime lives in core.ts. Everything here is erasable,
  * isolatedDeclarations-safe, and consumable from TS 5.5 through TS 7.
  */
-import type { StandardSchemaV1 } from "./standard-schema";
+import type { StandardSchemaV1 } from "./standard-schema.js";
 
 declare const AttemptIdBrand: unique symbol;
 /** Opaque attempt instance id. Doubles as an Idempotency-Key for the network calls an attempt causes. */

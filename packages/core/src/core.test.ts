@@ -12,7 +12,7 @@ import type {
 	RuntimeLimits,
 	RuntimeMode,
 	Seq,
-} from "./core";
+} from "./core.js";
 import {
 	configureDefaultRuntime,
 	connectBrowserLifecycle,
@@ -21,8 +21,8 @@ import {
 	intent,
 	memory,
 	on,
-} from "./core";
-import type { StandardSchemaV1 } from "./standard-schema";
+} from "./core.js";
+import type { StandardSchemaV1 } from "./standard-schema.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; duplicated per file by design)
@@ -258,15 +258,24 @@ describe("S1: declarations", () => {
 		expect(rt.memory.inProgress().length).toBe(0);
 	});
 
-	it("S1.3: given a name declared twice, when re-declared, then a duplicate-intent diagnostic fires and the second handle still works", () => {
+	it("S1.3-revised: given a name re-declared several times (HMR), then duplicate-intent fires ONCE PER NAME and every handle still works", () => {
 		const { rt, diagnostics } = makeRuntime();
 		rt.intent("dup.thing");
 		const second = rt.intent("dup.thing");
+		const third = rt.intent("dup.thing");
 		expect(diagnostics.filter(diagOfCode("duplicate-intent")).length).toBe(1);
 		expect(only(diagnostics.filter(diagOfCode("duplicate-intent"))).intent).toBe("dup.thing");
+		// A DIFFERENT duplicated name still gets its own (single) diagnostic.
+		rt.intent("dup.other");
+		rt.intent("dup.other");
+		rt.intent("dup.other");
+		const duplicates = diagnostics.filter(diagOfCode("duplicate-intent"));
+		expect(duplicates.length).toBe(2);
+		expect(duplicates.map((diagnostic) => diagnostic.intent)).toEqual(["dup.thing", "dup.other"]);
 		expect(second.name).toBe("dup.thing");
 		second.begin();
-		expect(rt.memory.marks().filter(ofKind("begun")).length).toBe(1);
+		third.begin();
+		expect(rt.memory.marks().filter(ofKind("begun")).length).toBe(2);
 	});
 
 	it("S1.4: given a setter-like name, when declared, then a setter-like-name diagnostic fires once and begin still records", () => {

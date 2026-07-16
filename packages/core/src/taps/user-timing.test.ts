@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import type { AttemptId, Diagnostic, Runtime } from "../core";
-import { createRuntime } from "../core";
-import type { PerfLike } from "./user-timing";
-import { createUserTimingTap } from "./user-timing";
+import type { AttemptId, Diagnostic, Runtime } from "../core.js";
+import { createRuntime } from "../core.js";
+import type { PerfLike } from "./user-timing.js";
+import { createUserTimingTap } from "./user-timing.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; taps run against a REAL runtime).

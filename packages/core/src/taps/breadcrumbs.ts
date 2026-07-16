@@ -6,7 +6,7 @@
  * Rollbar telemetry, …); this module never imports a vendor SDK and has no
  * runtime dependencies. `taps/sentry.ts` re-exports this as a named preset.
  */
-import type { AttemptView, Mark, MarkKind, Memory, Tap } from "../types";
+import type { AttemptView, Mark, MarkKind, Memory, Tap } from "../types.js";
 
 export type BreadcrumbLevel = "error" | "warning" | "info";
 

@@ -9,9 +9,9 @@ import type {
 	RuntimeLimits,
 	RuntimeMode,
 	Seq,
-} from "./core";
-import { createRuntime } from "./core";
-import type { StandardSchemaV1 } from "./standard-schema";
+} from "./core.js";
+import { createRuntime } from "./core.js";
+import type { StandardSchemaV1 } from "./standard-schema.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; duplicated per file by design)

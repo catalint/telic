@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import type { Mark, Runtime } from "../core";
-import { createRuntime } from "../core";
-import type { AgentSurface } from "./surface";
-import { exposeAgentSurface } from "./surface";
+import type { Mark, Runtime } from "../core.js";
+import { createRuntime } from "../core.js";
+import type { AgentSurface } from "./surface.js";
+import { exposeAgentSurface } from "./surface.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; duplicated per file by design)

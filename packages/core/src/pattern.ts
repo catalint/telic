@@ -2,7 +2,7 @@
  * Intent-name pattern matching (SPEC S8): exact, "scope.*", "*".
  * No regex; O(1) per check after compile.
  */
-import type { IntentName, IntentPattern } from "./types";
+import type { IntentName, IntentPattern } from "./types.js";
 
 export type CompiledPattern =
 	| { readonly kind: "all" }

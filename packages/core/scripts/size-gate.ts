@@ -30,10 +30,14 @@ const budgets: readonly Budget[] = [
 	{ entry: "./taps/breadcrumbs", file: "src/taps/breadcrumbs.ts", maxBrotliBytes: 420 },
 	{ entry: "./taps/sentry", file: "src/taps/sentry.ts", maxBrotliBytes: 420 },
 	{ entry: "./taps/user-timing", file: "src/taps/user-timing.ts", maxBrotliBytes: 320 },
-	{ entry: "./taps/analytics", file: "src/taps/analytics.ts", maxBrotliBytes: 950 },
+	{ entry: "./taps/analytics", file: "src/taps/analytics.ts", maxBrotliBytes: 1050 },
 	{ entry: "./agent", file: "src/agent/surface.ts", maxBrotliBytes: 340 },
-	{ entry: "./mediate", file: "src/mediate.ts", maxBrotliBytes: 5100 },
+	{ entry: "./mediate", file: "src/mediate.ts", maxBrotliBytes: 5250 },
 	{ entry: "./flow", file: "src/flow.ts", maxBrotliBytes: 4950 },
+	{ entry: "./persist", file: "src/persist.ts", maxBrotliBytes: 1900 },
+	{ entry: "./wire", file: "src/wire.ts", maxBrotliBytes: 1050 },
+	{ entry: "./testing", file: "src/testing.ts", maxBrotliBytes: 4700 },
+	{ entry: "./adapters/tanstack-query", file: "src/adapters/tanstack-query.ts", maxBrotliBytes: 870 },
 ];
 
 type Measurement = {

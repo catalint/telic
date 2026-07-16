@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import type { AttemptView, Diagnostic, Mark, Runtime } from "../core";
-import { createRuntime } from "../core";
-import type { AnalyticsDedupe, AnalyticsEvent } from "./analytics";
-import { createAnalyticsTap } from "./analytics";
+import type { AttemptView, Diagnostic, Mark, Runtime } from "../core.js";
+import { createRuntime } from "../core.js";
+import type { AnalyticsDedupe, AnalyticsEvent, AnalyticsTraceEvent } from "./analytics.js";
+import { createAnalyticsTap } from "./analytics.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; the tap runs against a REAL runtime,
@@ -525,5 +525,168 @@ describe("S17.6: callbacks propagate", () => {
 		expect(at(tapErrors(diagnostics), 0).code).toBe("tap-error");
 		expect(spyMarks).toHaveLength(1);
 		expect(listenerRan).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// S17.7: trace hook (parity introspection)
+// ---------------------------------------------------------------------------
+
+describe("S17.7: trace", () => {
+	function captureTrace(): {
+		traced: string[];
+		events: AnalyticsTraceEvent[];
+		trace: (event: AnalyticsTraceEvent) => void;
+	} {
+		const traced: string[] = [];
+		const events: AnalyticsTraceEvent[] = [];
+		return {
+			traced,
+			events,
+			trace: (event): void => {
+				traced.push(`${event.action}#${event.ruleIndex}`);
+				events.push(event);
+			},
+		};
+	}
+
+	it("S17.7: given a matching rule with map, when a mark occurs, then trace records exactly one sent decision carrying the mark and rule index", () => {
+		const { rt } = makeRuntime();
+		const { traced, events } = (() => {
+			const capture = captureTrace();
+			rt.tap(
+				createAnalyticsTap({
+					send: () => {},
+					consent: () => true,
+					trace: capture.trace,
+					rules: [
+						{ on: "user.login", kind: "begun", map: () => ({ name: "l" }) },
+						{ on: "cart.checkout", kind: "begun", map: () => ({ name: "c" }) },
+					],
+				}),
+			);
+			return capture;
+		})();
+		rt.intent("cart.checkout").begin();
+		expect(traced).toEqual(["sent#1"]);
+		expect(only(events).mark.kind).toBe("begun");
+		expect(only(events).mark.intent).toBe("cart.checkout");
+	});
+
+	it("S17.7: given an emit-only rule, when a mark occurs, then trace records emitted", () => {
+		const { rt } = makeRuntime();
+		const capture = captureTrace();
+		rt.tap(
+			createAnalyticsTap({
+				send: () => {},
+				consent: () => true,
+				trace: capture.trace,
+				rules: [{ on: "cart.checkout", kind: "begun", emit: () => {} }],
+			}),
+		);
+		rt.intent("cart.checkout").begin();
+		expect(capture.traced).toEqual(["emitted#0"]);
+	});
+
+	it("S17.7: given once per-intent, when the rule refires, then trace records the exact sent-then-deduped sequence", () => {
+		const { rt } = makeRuntime();
+		const capture = captureTrace();
+		rt.tap(
+			createAnalyticsTap({
+				send: () => {},
+				consent: () => true,
+				trace: capture.trace,
+				rules: [
+					{ on: "cart.checkout", kind: "begun", once: "per-intent", map: () => ({ name: "c" }) },
+				],
+			}),
+		);
+		rt.intent("cart.checkout").begin();
+		rt.intent("cart.checkout").begin();
+		rt.intent("cart.checkout").begin();
+		expect(capture.traced).toEqual(["sent#0", "deduped#0", "deduped#0"]);
+	});
+
+	it("S17.7: given a when guard returning false, then trace records skipped-when and the rule can still fire later", () => {
+		const { rt } = makeRuntime();
+		const capture = captureTrace();
+		let allow = false;
+		rt.tap(
+			createAnalyticsTap({
+				send: () => {},
+				consent: () => true,
+				trace: capture.trace,
+				rules: [
+					{ on: "cart.checkout", kind: "begun", when: () => allow, map: () => ({ name: "c" }) },
+				],
+			}),
+		);
+		rt.intent("cart.checkout").begin();
+		allow = true;
+		rt.intent("cart.checkout").begin();
+		expect(capture.traced).toEqual(["skipped-when#0", "sent#0"]);
+	});
+
+	it("S17.7: given consent denied in drop mode, then trace records denied", () => {
+		const { rt } = makeRuntime();
+		const capture = captureTrace();
+		rt.tap(
+			createAnalyticsTap({
+				send: () => {},
+				consent: () => false,
+				trace: capture.trace,
+				rules: [{ on: "cart.checkout", kind: "begun", map: () => ({ name: "c" }) }],
+			}),
+		);
+		rt.intent("cart.checkout").begin();
+		expect(capture.traced).toEqual(["denied#0"]);
+	});
+
+	it("S17.7: given buffer mode under denied consent, when recheck flushes, then trace records buffered decisions followed by flushed ones carrying the original marks", () => {
+		const { rt } = makeRuntime();
+		const capture = captureTrace();
+		let allow = false;
+		const tap = createAnalyticsTap({
+			send: () => {},
+			consent: () => allow,
+			whileDenied: "buffer",
+			trace: capture.trace,
+			rules: [{ on: "cart.*", kind: "begun", map: () => ({ name: "c" }) }],
+		});
+		rt.tap(tap);
+		rt.intent("cart.checkout").begin();
+		rt.intent("cart.checkout").begin();
+		expect(capture.traced).toEqual(["buffered#0", "buffered#0"]);
+		allow = true;
+		tap.recheck();
+		expect(capture.traced).toEqual(["buffered#0", "buffered#0", "flushed#0", "flushed#0"]);
+		// Flushed decisions carry the ORIGINAL marks, FIFO.
+		expect(capture.events.map((event) => String(event.mark.attempt))).toEqual([
+			"att-1",
+			"att-2",
+			"att-1",
+			"att-2",
+		]);
+	});
+
+	it("S17.7: given a buffered action whose once-key a live mark consumes meanwhile, when flushed, then the stale action traces deduped", () => {
+		const { rt } = makeRuntime();
+		const capture = captureTrace();
+		let allow = false;
+		const tap = createAnalyticsTap({
+			send: () => {},
+			consent: () => allow,
+			whileDenied: "buffer",
+			trace: capture.trace,
+			rules: [
+				{ on: "cart.checkout", kind: "begun", once: "per-intent", map: () => ({ name: "c" }) },
+			],
+		});
+		rt.tap(tap);
+		rt.intent("cart.checkout").begin(); // buffered, key not yet consumed
+		allow = true;
+		rt.intent("cart.checkout").begin(); // fires live, consumes the key
+		tap.recheck(); // stale buffered action is discarded
+		expect(capture.traced).toEqual(["buffered#0", "sent#0", "deduped#0"]);
 	});
 });

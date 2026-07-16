@@ -26,13 +26,17 @@ jobs:
       - name: publint
         working-directory: packages/core
         run: bunx publint --strict
-      # ESM-only, bundler-first package (DECISIONS D6/D8): node10 and CJS
-      # consumers are out of scope by design, and the bundler-mode emit uses
-      # extensionless relative imports (node16/nodenext resolution is not part
-      # of the D19d compatibility contract — bundler resolution is).
+      # Full attw profile (D20): node16 (from ESM) and bundler resolution must
+      # be fully green — the emitted files use extensioned relative imports.
+      # The two ignored rules are the only ones genuinely N/A for an ESM-only
+      # package (DECISIONS D6/D8):
+      #   - no-resolution: node10 resolution predates "exports" maps, so an
+      #     exports-only package can never resolve there by design.
+      #   - cjs-resolves-to-esm: require() consumers are out of contract; Node
+      #     CJS callers can still use dynamic import().
       - name: arethetypeswrong
         working-directory: packages/core
-        run: bunx @arethetypeswrong/cli --pack . --profile esm-only --ignore-rules internal-resolution-error
+        run: bunx @arethetypeswrong/cli --pack . --ignore-rules no-resolution cjs-resolves-to-esm
 
   consumer-matrix:
     runs-on: ubuntu-latest
@@ -41,8 +45,9 @@ jobs:
       fail-fast: false
       matrix:
         # The emitted .d.ts must compile on the whole support floor (TS 5.5+)
-        # up to the latest release; each entry also re-checks IntentRegistry
-        # augmentation across the compiled declaration boundary.
+        # up to the latest release; each entry runs BOTH resolution legs
+        # (bundler + node16, D20) and re-checks IntentRegistry augmentation
+        # across the compiled declaration boundary.
         typescript: ["5.5.4", "5.9.2", "6.0.3", "latest"]
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +55,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - name: Consumer typecheck (TS ${{ matrix.typescript }})
+      - name: Consumer typecheck (TS ${{ matrix.typescript }}, bundler + node16)
         env:
           TS_VERSION: ${{ matrix.typescript }}
         run: bun ci/consumer-smoke/run.ts "$TS_VERSION"

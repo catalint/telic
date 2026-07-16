@@ -4,7 +4,7 @@
  * side-effect-free — no environment access happens until
  * `exposeAgentSurface()` is actually called (S14.4).
  */
-import type { AttemptView, IntentDescriptor, Mark, MemorySnapshot, Runtime, Seq } from "../types";
+import type { AttemptView, IntentDescriptor, Mark, MemorySnapshot, Runtime, Seq } from "../types.js";
 
 /**
  * Pure delegations to `Runtime`/`Memory` — every returned value is already

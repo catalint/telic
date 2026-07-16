@@ -3,9 +3,9 @@
  * in ./types. Zero runtime dependencies; import is side-effect-free (S11.1).
  */
 
-import type { CompiledPattern } from "./pattern";
-import { compilePattern, matchesPattern } from "./pattern";
-import type { StandardSchemaV1 } from "./standard-schema";
+import type { CompiledPattern } from "./pattern.js";
+import { compilePattern, matchesPattern } from "./pattern.js";
+import type { StandardSchemaV1 } from "./standard-schema.js";
 import type {
 	AbandonReason,
 	Attempt,
@@ -44,9 +44,9 @@ import type {
 	Tap,
 	Unsubscribe,
 	URLPatternLike,
-} from "./types";
+} from "./types.js";
 
-export type * from "./types";
+export type * from "./types.js";
 
 /**
  * Local mirror of types.ts's (unexported) SchemaOut. Exported because
@@ -196,6 +196,8 @@ type RuntimeInternals = {
 	 */
 	declareOrGet(name: IntentName, fallbackConfig: StoredIntentConfig | undefined): UntypedIntent;
 	emitDiagnostic(diagnostic: Diagnostic): void;
+	/** Routes duplicate-intent through the runtime's once-per-name gate (S1.3-revised). */
+	emitDuplicateIntent(name: IntentName): void;
 	/** Whether this runtime's declaration for the name carries a fulfilled schema (S3.12 outcome mapping). */
 	hasFulfilledSchema(name: IntentName): boolean;
 	/** Installs the live probe behind this runtime's IntentDescriptor.handled (S12.5). */
@@ -246,6 +248,7 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 	let handledProbe: (name: IntentName) => boolean = (): boolean => false;
 	const setterWarnedNames = new Set<string>();
 	const missingExposureWarnedNames = new Set<string>();
+	const duplicateWarnedNames = new Set<string>();
 	const keyedActive = new Map<string, { readonly id: AttemptId; readonly handle: unknown }>();
 	const listeners: ListenerEntry[] = [];
 	const taps: TapEntry[] = [];
@@ -580,6 +583,13 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 		return handle;
 	}
 
+	/** duplicate-intent fires ONCE PER NAME per runtime (S1.3-revised) — HMR re-evaluation must not train diagnostic-blindness. */
+	function warnDuplicateIntent(name: IntentName): void {
+		if (duplicateWarnedNames.has(name)) return;
+		duplicateWarnedNames.add(name);
+		emitDiagnostic({ code: "duplicate-intent", intent: name });
+	}
+
 	function warnSetterLikeName(name: IntentName): void {
 		const dot = name.indexOf(".");
 		if (dot === -1) return;
@@ -598,7 +608,7 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 		name: IntentName,
 		config?: IntentConfig<PS, FS, RS>,
 	): Intent<SchemaOutput<PS, void>, SchemaOutput<FS, void>, SchemaOutput<RS, unknown>> {
-		if (declarations.has(name)) emitDiagnostic({ code: "duplicate-intent", intent: name });
+		if (declarations.has(name)) warnDuplicateIntent(name);
 		else {
 			// First declaration wins for the descriptor (S12.1); `handled` is
 			// computed live at describe() time, not here (S12.5). The erased
@@ -1122,6 +1132,7 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 			return handle;
 		},
 		emitDiagnostic,
+		emitDuplicateIntent: warnDuplicateIntent,
 		hasFulfilledSchema: (name: IntentName): boolean =>
 			declarations.get(name)?.config?.fulfilled !== undefined,
 		setHandledProbe(probe: (name: IntentName) => boolean): void {
@@ -1273,6 +1284,9 @@ function internalsOf(runtime: Runtime): RuntimeInternals {
 		emitDiagnostic(): void {
 			// A foreign Runtime exposes no diagnostic channel here; drop (S10.2).
 		},
+		emitDuplicateIntent(): void {
+			// Same: no diagnostic channel to route through.
+		},
 		hasFulfilledSchema: (): boolean => false,
 		setHandledProbe(): void {
 			// A foreign Runtime keeps its default all-false handled reporting.
@@ -1391,8 +1405,9 @@ export function intent<
 	const internals = internalsOf(currentRuntime());
 	if (moduleIntentRegistry.has(name)) {
 		// Repeat module-level declaration: diagnostic on the current default
-		// runtime, but the registry keeps the FIRST config (S10.4).
-		internals.emitDiagnostic({ code: "duplicate-intent", intent: name });
+		// runtime, but the registry keeps the FIRST config (S10.4). Routed
+		// through the runtime's once-per-name gate (S1.3-revised).
+		internals.emitDuplicateIntent(name);
 	} else {
 		const stored = asTyped<StoredIntentConfig | undefined>(config);
 		moduleIntentRegistry.set(name, stored);

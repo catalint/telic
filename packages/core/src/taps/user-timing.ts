@@ -8,7 +8,7 @@
  * The begin mark's name is derivable from any terminal mark (intent + attempt),
  * so no per-attempt bookkeeping is kept.
  */
-import type { Mark, Tap } from "../types";
+import type { Mark, Tap } from "../types.js";
 
 /** Structural subset of the DOM `Performance` mark/measure surface. */
 export type PerfLike = {

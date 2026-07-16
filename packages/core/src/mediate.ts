@@ -8,13 +8,13 @@
  * runtimes get an isolated world via createMediator(runtime).
  */
 
-import type { RuntimeMediationSeam } from "./core";
+import type { RuntimeMediationSeam } from "./core.js";
 import {
 	currentRuntime,
 	mediationSeamOf,
 	registerDefaultRuntimeAdopter,
 	resolveModuleIntent,
-} from "./core";
+} from "./core.js";
 import type {
 	Attempt,
 	CommandStub,
@@ -27,7 +27,7 @@ import type {
 	PayloadFor,
 	Runtime,
 	Unsubscribe,
-} from "./types";
+} from "./types.js";
 
 export type {
 	CommandStub,
@@ -35,7 +35,7 @@ export type {
 	MediationHandler,
 	MediationResult,
 	Mediator,
-} from "./types";
+} from "./types.js";
 
 type ParkedDispatch = {
 	readonly attempt: Attempt<unknown, unknown, unknown>;

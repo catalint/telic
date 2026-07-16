@@ -179,3 +179,17 @@ placeholder to the full positioning — the hold-back reason (no code yet) no
 longer applies. This public DECISIONS.md is a sanitized derivative of the
 founding log: identical decision content, origin-business specifics
 generalized.
+**D20. v0.2 development venue and scope (2026-07-16).** All new library code
+is developed in THIS repo from now on (the origin monorepo's embedded copy is
+frozen except critical fixes until it flips to consuming published versions).
+v0.2 scope, spec-first as always: node16/nodenext type support via
+extensioned relative imports (the durable fix, not a post-build pass);
+@telic/react (packages/react — SPEC'd R1–R6 with StrictMode/HMR semantics as
+CONTRACTS, and the doctrine that mounts are not intents); persistence tap
+(S18) + wire format (S19, hand-rolled validators, still zero deps); TanStack
+Query adapter (S20 — internal retries are noted() execution detail on one
+attempt, retryOf reserved for user-initiated retries); runner-agnostic
+testing subpath (S21); analytics-tap trace hook for CI-assertable migration
+parity (S17.7); duplicate-intent fires once per name (S1.3 revised — HMR must
+not train diagnostic-blindness). Release automation: publish-on-tag workflow
+with npm trusted publishing (OIDC provenance).

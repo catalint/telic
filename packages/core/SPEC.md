@@ -409,3 +409,89 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    documented defaults resolved at runtime-creation time.
 3. Everything conforms to `src/types.ts` — no `any`, no `as` (except
    `as const`), explicit return types, isolatedDeclarations-clean.
+
+## S18. Persistence tap (src/persist.ts)
+
+1. `connectStorage(runtime, opts): () => void` — opts: `storage: "session" |
+   "local" | Pick<Storage, "getItem" | "setItem" | "removeItem">`, `key?`
+   (default "telic:tape"), `enabled?: () => boolean` (storage-classification /
+   consent hook, checked per write AND at restore), `maxMarks?` (default 200),
+   `resume?: readonly IntentPattern[]`.
+2. WRITE path: a tap persisting the rolling tail of marks (≤ maxMarks) after
+   each mark, serialized via the wire format (S19). Exposure filtering is
+   ABSOLUTE: marks of intents with exposure "local" are never written;
+   "private" marks are written with their payload placeholder as-is. Storage
+   write failures (quota, disabled) are swallowed to a diagnostic
+   (`tap-error`, tap id "persist") — persistence must never break the app.
+3. RESTORE path (runs once inside connectStorage, before the tap attaches):
+   parse via the wire schema (malformed/stale → dropped silently, storage
+   cleared); valid marks are `ingest()`ed with `origin.restored: true`.
+   Attempts that were ACTIVE in the restored tape: those matching a `resume`
+   pattern are resurrected as active; all others are settled as
+   `abandoned({ why: "navigation" })` at restore time.
+4. Restored marks count toward memory queries exactly like live marks
+   (distinguishable via `origin.restored`).
+5. The uninstall fn detaches the tap and stops writes; it does not clear
+   storage. `clearPersistedTape(storage, key?)` is exported for explicit
+   erasure (GDPR delete paths).
+
+## S19. Wire format (src/wire.ts)
+
+1. Hand-rolled structural validators (ZERO deps — no zod): `parseMark(value):
+   Mark | undefined` and `parseWirePayload(json: string): readonly Mark[]`
+   (tolerant: skips invalid entries, returns [] on garbage). Validates kind
+   discriminants, required fields per kind, primitive types; payload/outcome/
+   reason/data pass through as unknown (they are already post-redaction).
+2. `serializeMarks(marks): string` — JSON, versioned envelope `{ v: 1, marks }`;
+   parse rejects unknown versions (forward-compat: better to drop than
+   misread).
+3. Used by persist (S18) and future transports; core never imports wire.
+
+## S20. TanStack Query adapter (src/adapters/tanstack-query.ts)
+
+1. Structural peer only — NO @tanstack import in src (types defined
+   structurally; @tanstack/query-core is a devDependency for tests only).
+2. `linkMutationCache(runtime, cache, opts?): () => void` — subscribes to a
+   MutationCache-shaped `{ subscribe(cb): () => void }`. For mutation events
+   whose mutation carries `meta.attempt` (an AttemptId) OR that begin while an
+   ambient attempt is current: emits `linked` marks `{ kind: "mutation",
+   mutationKey, status }` on that attempt for observed status transitions.
+3. RETRY SEMANTICS (the D17 question, decided): React Query's INTERNAL
+   retries are execution detail, not user intent — they surface as `noted`
+   marks (`{ retry: n }`) on the ONE attempt. `retryOf` chains are reserved
+   for USER-initiated retries (a new begin the app records).
+4. `settleFromMutation(attempt, opts?)` — returns `{ onSuccess, onError,
+   onSettled }` callbacks an app spreads into mutation options: success →
+   fulfill (data as outcome only when the intent declared a fulfilled
+   schema), error → reject. First-write-wins as always.
+5. Never wires cancellation automatically (attempt.signal → query
+   cancellation is the app's explicit choice; document the one-liner).
+
+## S21. Testing subpath (src/testing.ts)
+
+1. RUNNER-AGNOSTIC: no bun:test / vitest / jest imports — pure functions and
+   factories usable under any runner.
+2. `createTestRuntime(opts?)` → `{ runtime, clock: { now, advance(ms),
+   set(ms) }, nextId, diagnostics: Diagnostic[] }` — deterministic clock
+   (start 1000), counter ids ("t1", "t2", …), diagnostics collected.
+3. Assertion HELPERS return data, never throw assertions: `marksOf(runtime,
+   pattern?)`, `attemptsOf(runtime, pattern?)`, `phaseOf(runtime, attemptId)`,
+   `serializeTape(runtime)` (stable, sorted-key JSON for snapshot testing —
+   seq/at/ids included since the test runtime is deterministic).
+4. Ships in the published package (subpath ./testing); zero size impact on
+   other entries (size gate covers it separately).
+
+## S17 amendment (parity introspection)
+
+7. `createAnalyticsTap` accepts `trace?: (event: { mark: Mark; ruleIndex:
+   number; action: "sent" | "emitted" | "deduped" | "denied" | "buffered" |
+   "flushed" | "skipped-when" }) => void` — called for every rule/mark
+   decision. Zero cost when absent. This is the CI-assertable mark→rule→action
+   record that makes migration parity provable without watching live sinks.
+
+## S1 amendment (HMR)
+
+3-revised. Re-declaring an already-declared name fires `duplicate-intent`
+   ONCE PER NAME per runtime (not per re-declaration) — hot-module-reload
+   re-evaluation must not train developers to ignore diagnostics. First
+   declaration's config still wins (S12.1 unchanged).

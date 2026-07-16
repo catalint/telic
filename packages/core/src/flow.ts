@@ -9,8 +9,8 @@
  * persistence tap ships.
  */
 
-import { currentRuntime, resolveModuleIntent } from "./core";
-import type { Attempt, IntentName, Runtime } from "./types";
+import { currentRuntime, resolveModuleIntent } from "./core.js";
+import type { Attempt, IntentName, Runtime } from "./types.js";
 
 /** run()-style result a step fn resolves with; child settlement follows S3.12 (S16.2). */
 export type FlowStepResult = {

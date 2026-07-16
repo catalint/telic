@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { createRuntime } from "../core";
-import { createBreadcrumbTap } from "./breadcrumbs";
-import type { BreadcrumbLike, BreadcrumbTapOptions, IntentContext } from "./sentry";
-import { createSentryBreadcrumbTap, intentContext } from "./sentry";
+import { createRuntime } from "../core.js";
+import { createBreadcrumbTap } from "./breadcrumbs.js";
+import type { BreadcrumbLike, BreadcrumbTapOptions, IntentContext } from "./sentry.js";
+import { createSentryBreadcrumbTap, intentContext } from "./sentry.js";
 
 // ---------------------------------------------------------------------------
 // S13.2: taps/sentry is a thin preset over taps/breadcrumbs. The full behavioral

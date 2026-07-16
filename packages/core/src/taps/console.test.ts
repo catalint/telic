@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { AttemptId, Mark, Runtime } from "../core";
-import { createRuntime } from "../core";
-import { createConsoleTap } from "./console";
+import type { AttemptId, Mark, Runtime } from "../core.js";
+import { createRuntime } from "../core.js";
+import { createConsoleTap } from "./console.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; taps run against a REAL runtime).

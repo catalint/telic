@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { bucketOf, compilePattern, matchesPattern, scopeOf } from "./pattern";
-import type { IntentName, IntentPattern } from "./types";
+import { bucketOf, compilePattern, matchesPattern, scopeOf } from "./pattern.js";
+import type { IntentName, IntentPattern } from "./types.js";
 
 describe("compilePattern (S8.2)", () => {
 	it('given "*", when compiled, then yields kind "all"', () => {

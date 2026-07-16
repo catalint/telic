@@ -5,7 +5,7 @@
  * import stays side-effect-free and SSR-safe. This is the ONLY telic module
  * allowed to touch `console`, and only as an injectable default (S13.1).
  */
-import type { Mark, Tap } from "../types";
+import type { Mark, Tap } from "../types.js";
 
 export type ConsoleTapOptions = {
 	/** Line sink; defaults to `globalThis.console?.debug` (no-op when absent). */

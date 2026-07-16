@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import type { Runtime, Seq } from "../core";
-import { createRuntime } from "../core";
-import type { StandardSchemaV1 } from "../standard-schema";
-import type { BreadcrumbLike } from "./breadcrumbs";
-import { createBreadcrumbTap, intentContext } from "./breadcrumbs";
+import type { Runtime, Seq } from "../core.js";
+import { createRuntime } from "../core.js";
+import type { StandardSchemaV1 } from "../standard-schema.js";
+import type { BreadcrumbLike } from "./breadcrumbs.js";
+import { createBreadcrumbTap, intentContext } from "./breadcrumbs.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; taps run against a REAL runtime).

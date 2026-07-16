@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import type { AgentSurface } from "./agent/surface";
-import { exposeAgentSurface } from "./agent/surface";
-import type { Diagnostic, Mark, Runtime } from "./core";
-import { configureDefaultRuntime, createRuntime, currentRuntime, intent, memory } from "./core";
-import { command, createMediator, dispatch, handle } from "./mediate";
-import type { StandardSchemaV1 } from "./standard-schema";
+import type { AgentSurface } from "./agent/surface.js";
+import { exposeAgentSurface } from "./agent/surface.js";
+import type { Diagnostic, Mark, Runtime } from "./core.js";
+import { configureDefaultRuntime, createRuntime, currentRuntime, intent, memory } from "./core.js";
+import { command, createMediator, dispatch, handle } from "./mediate.js";
+import type { StandardSchemaV1 } from "./standard-schema.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure (no external deps; duplicated per file by design)

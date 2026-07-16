@@ -1,6 +1,6 @@
 {
 	"name": "@telic/core",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "A recorded intent + memory layer for frontends — record-first user-intent lifecycle with in-page queryable session memory.",
 	"license": "MIT",
 	"author": "Catalin Tanasescu",

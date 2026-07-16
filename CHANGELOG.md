@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 — 2026-07-16
+
+- Docs: README rewritten to surface all three layers — mediation and `flow()` now have
+  first-class examples (the checkout example uses the real `flow()` API), plus a
+  what's-in-the-box subpath map. The npm package page now shows the full README.
+
 ## 0.3.0 — 2026-07-16
 
 - **Cross-tab & cross-app transports**: `transports/broadcast` (BroadcastChannel gossip), `transports/post-message` (iframe/micro-frontend bridging with mandatory origin allow-listing), and `transports/shared-worker` (authoritative cross-tab hub with snapshot requests). Forward-only, loop-safe, exposure-respecting.

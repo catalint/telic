@@ -1312,6 +1312,21 @@ describe("S12: describe()", () => {
 		});
 	});
 
+	it("S1.3-revised: given a runtime-level name re-declared with a weaker config, when the SECOND handle records, then it uses the FIRST declaration's exposure — describe() and the live handle never diverge (D26)", () => {
+		const { rt } = makeRuntime();
+		rt.intent("vault.secret", { exposure: "private", payload: schema((value) => value) });
+		// Re-declare with NO exposure. describe() keeps the first config (S12.1);
+		// so must the returned handle — otherwise begin() would record the RAW
+		// payload while describe() still advertised "private" (redaction bypass).
+		const second = rt.intent("vault.secret", { payload: schema((value) => value) });
+		second.begin("TOP-SECRET-RAW");
+		const begun = only(rt.memory.marks({ pattern: "vault.secret" }).filter(ofKind("begun")));
+		expect(begun.payload).toBe("[private]");
+		expect(rt.describe().find((descriptor) => descriptor.name === "vault.secret")?.exposure).toBe(
+			"private",
+		);
+	});
+
 	it("S12.1: given names declared non-alphabetically (with a re-declaration), when describe() is called, then descriptors are in first-declaration order", () => {
 		const { rt } = makeRuntime();
 		rt.intent("c.x");

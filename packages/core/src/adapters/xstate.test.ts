@@ -295,6 +295,33 @@ describe("S25.4: settleFromMachine", () => {
 		});
 	});
 
+	it("S25.5: given an actor already sitting in a state whose name collides with an Object.prototype key, when settleFromMachine subscribes with that state UNmapped, then the own-property lookup makes it a no-op — nothing throws and the attempt stays active (D27)", () => {
+		const { rt } = makeRuntime();
+		const machine = createMachine({
+			id: "proto",
+			initial: "idle",
+			states: {
+				idle: { on: { GO: "constructor" } },
+				// `constructor` is a valid xstate state name that collides with
+				// Object.prototype.constructor — pre-fix, map["constructor"] resolved
+				// the inherited function, bypassed the undefined guard, and crashed
+				// the synchronous getSnapshot probe. (Atomic, not final — a `final`
+				// type widens under xstate's inference when a state key is
+				// `constructor`; the actor sitting in this state is enough.)
+				constructor: {},
+			},
+		});
+		const actor = createActor(machine);
+		actor.start();
+		actor.send({ type: "GO" }); // now sitting in the final "constructor" state
+
+		const attempt = rt.intent("proto.walk").begin();
+		expect(() =>
+			settleFromMachine(attempt, actor, { done: { fulfill: () => undefined } }),
+		).not.toThrow();
+		expect(attempt.phase().phase).toBe("active");
+	});
+
 	it("given re-entry of a mapped state, when it happens after settling, then it is a benign no-op (first-write-wins, no double-settle diagnostic)", () => {
 		const { rt, diagnostics } = makeRuntime();
 		const machine = createMachine({

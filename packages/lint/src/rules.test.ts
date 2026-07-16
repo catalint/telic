@@ -66,6 +66,45 @@ describe("scopeOwnership (L2.3)", () => {
 		expect(findings).toHaveLength(1);
 		expect(findings[0]?.name).toBe("new.capability");
 	});
+
+	it("treats a scope colliding with an Object.prototype key as unconfigured, never crashing", () => {
+		const findings = scopeOwnership(
+			[
+				call("intent", "constructor.x", "/proj/src/a.ts"),
+				call("handle", "toString.foo", "/proj/src/b.ts"),
+			],
+			config,
+			configDir,
+		);
+		expect(findings).toEqual([]);
+	});
+
+	it("falls through to requireScopeOwnership for an Object.prototype-colliding scope", () => {
+		const strict: LintConfig = { scopes: { checkout: ["src/checkout/**"] }, requireScopeOwnership: true };
+		const findings = scopeOwnership(
+			[call("intent", "toString.foo", "/proj/src/x.ts")],
+			strict,
+			configDir,
+		);
+		expect(findings).toHaveLength(1);
+		expect(findings[0]?.rule).toBe("scope-ownership");
+		expect(findings[0]?.message).toContain("not declared in config.scopes");
+	});
+
+	it("treats a scope literally named after an Object.prototype key as an ordinary owned scope", () => {
+		const prototypeNamedScopes: LintConfig = {
+			scopes: { constructor: ["src/legacy/**"], ["__proto__"]: ["src/proto/**"] },
+		};
+		const findings = scopeOwnership(
+			[
+				call("intent", "constructor.migrate", "/proj/src/legacy/migrate.ts"),
+				call("handle", "__proto__.trace", "/proj/src/proto/trace.ts"),
+			],
+			prototypeNamedScopes,
+			configDir,
+		);
+		expect(findings).toEqual([]);
+	});
 });
 
 describe("duplicateIntentName ordering (L2.2)", () => {

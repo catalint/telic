@@ -240,7 +240,12 @@ export function settleFromMachine<P, F, R>(
 		if (done) return;
 		const parsed = parseSnapshot(snapshot);
 		if (parsed === undefined) return;
-		const settler = map[parsed.state];
+		// OWN-property lookup: `map` is a caller-supplied object literal and
+		// `parsed.state` is an arbitrary machine state name. A state named
+		// `toString`/`constructor`/`__proto__` would otherwise resolve an
+		// inherited Object.prototype member, bypass the undefined guard, and
+		// crash — the adapter must degrade to "observes nothing" (S25.5/D27).
+		const settler = Object.hasOwn(map, parsed.state) ? map[parsed.state] : undefined;
 		if (settler === undefined) return;
 		done = true;
 		if ("fulfill" in settler) {

@@ -48,6 +48,28 @@ describe("matchGlob — brace alternation", () => {
 	});
 });
 
+describe("matchGlob — `.` segment normalization", () => {
+	it("matches a leading ./ pattern against a bare path", () => {
+		expect(matchGlob("./src/**", "src/a.ts")).toBe(true);
+	});
+
+	it("matches a leading ./ pattern with a file glob", () => {
+		expect(matchGlob("./src/**/*.ts", "src/a.ts")).toBe(true);
+	});
+
+	it("keeps bare pattern semantics unchanged", () => {
+		expect(matchGlob("src/**", "src/a.ts")).toBe(true);
+	});
+
+	it("drops interior . segments in both pattern and path", () => {
+		expect(matchGlob("src/./**", "src/./a.ts")).toBe(true);
+	});
+
+	it("still rejects a non-matching prefix after normalization", () => {
+		expect(matchGlob("./src/**", "docs/a.ts")).toBe(false);
+	});
+});
+
 describe("matchAnyGlob", () => {
 	it("is true when any pattern matches", () => {
 		expect(matchAnyGlob(["src/**", "test/**"], "test/a.ts")).toBe(true);

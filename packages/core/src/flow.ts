@@ -83,7 +83,10 @@ export async function flow(
 		payload,
 		flowKey !== undefined ? { key: flowKey } : undefined,
 	);
-	const outcomes: Record<string, unknown> = {};
+	// Keyed by step intent name (untrusted for prototype keys): a prototype-free
+	// accumulator makes a step named `__proto__`/`constructor` an ordinary own
+	// key instead of mutating the object's prototype (D27).
+	const outcomes: Record<string, unknown> = Object.create(null);
 
 	for (const flowStep of steps) {
 		const childKey = flowKey !== undefined ? `${flowKey}:${flowStep.intent}` : undefined;

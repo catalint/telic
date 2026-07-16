@@ -28,7 +28,11 @@ framework-agnostic; analyzes TypeScript/TSX sources statically.
    — an `intent()`/`handle()`/`command()` literal whose scope (first segment)
    is configured but whose file matches none of that scope's globs; AND any
    scope in use that is absent from config when `"requireScopeOwnership":
-   true` (a new scope must be a reviewable act).
+   true` (a new scope must be a reviewable act). Scope resolution is an
+   OWN-property lookup on the configured scopes: a scope name that collides
+   with an `Object.prototype` key (`__proto__`, `constructor`, `toString`,
+   …) is an ordinary scope name — never resolved from the prototype, never
+   a crash (upholds the L1.2 exit-code contract).
 4. **dead-contract** — a `command("name")` with no `handle("name", …)`
    anywhere in the scanned set (finding: severity warning — the handler may
    be presence-based/lazy, so the message says so), and a `handle("name")`
@@ -45,10 +49,17 @@ framework-agnostic; analyzes TypeScript/TSX sources statically.
    functions with those names in files that never import from a telic module
    are SKIPPED (no false positives on unrelated `handle` functions —
    the file must import from a specifier containing "telic" for its calls
-   to be eligible).
+   to be eligible). A telic import confers eligibility only when it
+   introduces a RUNTIME binding: a default import, a namespace import, or
+   at least one non-type-only named element. A whole-clause type-only
+   import (`import type { … }`) or an all-inline type-only import
+   (`import { type X }`) confers none.
 2. `typescript` is a peerDependency (>= 5.5) — the tool uses the host's
    compiler; zero bundled TS.
 3. Deterministic output ordering (file, then line) for CI diffing.
+4. Glob matching normalizes a leading `./` and interior `.` path segments
+   away, in both patterns and scanned paths — `./src/**` matches
+   identically to `src/**`.
 
 ## L4. Package
 

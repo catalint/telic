@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Whole-monorepo review pass — confirmed fixes (all behind the same `bun run check` gate; SPEC clauses + DECISIONS entries added in the same change):
+
+- **Fix (core, privacy — HIGH):** a runtime-level `intent()` re-declaration returned a handle built from the SECOND config while `describe()` still reported the first — so re-declaring a name with a weaker `exposure`/`redact` could record RAW payloads that a privacy audit reading `describe()` could not see. The returned handle (and the `missing-exposure` diagnostic) now use the first declaration's config, matching the module-level path. First-config-wins is now a behavior invariant, not just a descriptor one (D26, SPEC S1 amendment).
+- **Fix (core, crash — HIGH):** `settleFromMachine` (xstate adapter) indexed its settle-map with a raw machine state name; a state named `toString`/`constructor`/`__proto__` resolved an inherited `Object.prototype` member, bypassed the undefined guard, crashed, and stranded the attempt. The lookup is now own-property-guarded; unmapped states of any name are a no-op (D27, SPEC S25.5).
+- **Fix (core, otel tap):** a non-plain-object note (Date, RegExp, Map, class instance) flattened to an empty span-event attribute bag, dropping its data; such values now take the JSON fallback. A plain `{}` still flattens to an empty event (SPEC S27.4).
+- **Hardening (core, flow):** the `flow()` outcome accumulator is prototype-free, so a step named `__proto__`/`constructor` is an ordinary key rather than a prototype mutation (D27).
+- **Fix (lint, crash — HIGH):** `scope-ownership` indexed the scopes object with a raw intent scope name; a name colliding with an `Object.prototype` key crashed the CLI uncaught, breaking the L1.2 exit-code contract. The lookup is own-property-guarded and the scopes accumulator is prototype-free (SPEC L2.3).
+- **Fix (lint, false positive):** an all-type-only inline telic import (`import { type X }`) wrongly marked a file eligible for extraction, producing false-positive findings on files with zero runtime telic bindings. Eligibility now requires a runtime binding (SPEC L3.1).
+- **Fix (lint, glob):** a `./`-prefixed positional glob silently matched zero files (green CI on a path that scanned nothing); leading and interior `.` segments are now normalized away (SPEC L3.4).
+
 ## 0.3.3 — 2026-07-16
 
 - **AI-agent legibility**: `AI-GUIDE.md` now ships in the package (condensed correct-usage

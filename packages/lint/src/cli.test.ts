@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { JsonFinding } from "./types.js";
 
@@ -6,6 +8,14 @@ import type { JsonFinding } from "./types.js";
 // build dependency — `bun test` runs before `bun run build`.
 const cliEntry = join(import.meta.dir, "cli.ts");
 const cliProject = join(import.meta.dir, "..", "fixtures", "cli-project");
+
+// A throwaway project directory holding only a telic.config.json — used to
+// exercise the exit-2 config-error contract (L1.2) end to end.
+function makeConfigProject(configJson: string): string {
+	const projectDir = mkdtempSync(join(tmpdir(), "telic-lint-cli-"));
+	writeFileSync(join(projectDir, "telic.config.json"), configJson);
+	return projectDir;
+}
 
 type Run = { readonly code: number; readonly stdout: string; readonly stderr: string };
 
@@ -52,6 +62,27 @@ describe("telic-lint CLI", () => {
 		const run = await runCli(["--config", "nope.json"], cliProject);
 		expect(run.code).toBe(2);
 		expect(run.stderr).toContain("config file not found");
+	});
+
+	it("exits 2 when the discovered config file is malformed JSON (L1.2)", async () => {
+		const projectDir = makeConfigProject("{ not json");
+		const run = await runCli([], projectDir);
+		expect(run.code).toBe(2);
+		expect(run.stderr).toContain("invalid JSON in config file");
+	});
+
+	it("exits 2 when an explicit --config file has an invalid shape (L1.2)", async () => {
+		const projectDir = makeConfigProject(`{"scopes":["a"]}`);
+		const run = await runCli(["--config", "telic.config.json"], projectDir);
+		expect(run.code).toBe(2);
+		expect(run.stderr).toContain("config.scopes must be an object of scope -> glob[]");
+	});
+
+	it("exits 2 when a discovered config value has the wrong type (L1.2)", async () => {
+		const projectDir = makeConfigProject(`{"deadContract":"yes"}`);
+		const run = await runCli([], projectDir);
+		expect(run.code).toBe(2);
+		expect(run.stderr).toContain("config.deadContract must be a boolean");
 	});
 
 	it("prints usage and exits 0 for --help", async () => {

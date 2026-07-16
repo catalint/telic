@@ -39,6 +39,11 @@ describe("extractCalls — eligibility (L3.1)", () => {
 		expect(extractCalls("a.ts", source)).toEqual([]);
 	});
 
+	it("does not become eligible from an all-inline type-only telic import", () => {
+		const source = `import { type IntentName } from "@telic/core";\nfunction handle(name: IntentName): void { void name; }\nhandle("orders.setStatus");`;
+		expect(extractCalls("a.ts", source)).toEqual([]);
+	});
+
 	it("stays eligible when a value binding sits beside an inline type import", () => {
 		const source = `import { intent, type IntentName } from "@telic/core";\nintent("checkout.pay");`;
 		expect(extractCalls("a.ts", source)).toEqual([

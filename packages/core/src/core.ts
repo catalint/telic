@@ -608,7 +608,8 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 		name: IntentName,
 		config?: IntentConfig<PS, FS, RS>,
 	): Intent<SchemaOutput<PS, void>, SchemaOutput<FS, void>, SchemaOutput<RS, unknown>> {
-		if (declarations.has(name)) warnDuplicateIntent(name);
+		const alreadyDeclared = declarations.has(name);
+		if (alreadyDeclared) warnDuplicateIntent(name);
 		else {
 			// First declaration wins for the descriptor (S12.1); `handled` is
 			// computed live at describe() time, not here (S12.5). The erased
@@ -624,21 +625,30 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 		}
 		warnSetterLikeName(name);
 
+		// The FIRST declaration's config governs this name (S12.1/D26): on
+		// re-declaration the freshly-passed config is ignored for BOTH the
+		// diagnostic below and the returned handle, so describe() (which reads the
+		// frozen first meta) and the live handle can never diverge — a second call
+		// with a different exposure/redact only shapes the static type.
+		const effectiveConfig: IntentConfig<PS, FS, RS> | undefined = alreadyDeclared
+			? asTyped<IntentConfig<PS, FS, RS> | undefined>(declarations.get(name)?.config)
+			: config;
+
 		// Same diagnostics-as-linters philosophy as setter-like-name (S1.5): under
 		// strictPrivacy, a payload schema with no explicit exposure AND no redact
 		// leaks — nudge once per name at declaration time. Recording proceeds.
 		if (
 			strictPrivacy &&
-			config?.payload !== undefined &&
-			config?.exposure === undefined &&
-			config?.redact === undefined &&
+			effectiveConfig?.payload !== undefined &&
+			effectiveConfig?.exposure === undefined &&
+			effectiveConfig?.redact === undefined &&
 			!missingExposureWarnedNames.has(name)
 		) {
 			missingExposureWarnedNames.add(name);
 			emitDiagnostic({ code: "missing-exposure", intent: name });
 		}
 
-		return buildIntentHandle<PS, FS, RS>(name, config);
+		return buildIntentHandle<PS, FS, RS>(name, effectiveConfig);
 	}
 
 	/** Handle construction WITHOUT declaration bookkeeping — declareIntent and declareOrGet both build through here. */

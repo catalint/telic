@@ -11,7 +11,7 @@ function normalizeSeparators(value: string): string {
 function splitSegments(value: string): string[] {
 	return normalizeSeparators(value)
 		.split("/")
-		.filter((segment) => segment.length > 0);
+		.filter((segment) => segment.length > 0 && segment !== ".");
 }
 
 function expandBraces(pattern: string): string[] {

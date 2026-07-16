@@ -98,6 +98,30 @@ describe("S24 SharedWorker hub transport", () => {
 		expect(a.runtime.memory.marks({ pattern: "cart.*" }).length).toBe(1);
 	});
 
+	it("S24.1: exposure — local never leaves the runtime, private travels as the placeholder (same semantics as S22)", () => {
+		const hub = makeRuntime("hub");
+		const tapeHub = createTapeHub(hub.runtime);
+		const pairA = makeFakePortPair();
+		const pairB = makeFakePortPair();
+		tapeHub.connect(pairA.hubPort);
+		tapeHub.connect(pairB.hubPort);
+
+		const a = makeRuntime("a");
+		const b = makeRuntime("b");
+		connectSharedWorker(a.runtime, { port: pairA.clientPort, tab: "tab-A" });
+		connectSharedWorker(b.runtime, { port: pairB.clientPort, tab: "tab-B" });
+
+		begin(a.runtime, "shop.view", { sku: "abc" });
+		begin(a.runtime, "shop.debug", { secret: "xyz" }, "local");
+		begin(a.runtime, "shop.pay", { card: "4242" }, "private");
+
+		expect(b.runtime.memory.last("shop.view")?.payload).toEqual({ sku: "abc" });
+		expect(b.runtime.memory.last("shop.debug")).toBeUndefined(); // local never sent
+		expect(b.runtime.memory.last("shop.pay")?.payload).toBe("[private]");
+		// The local mark never reached the hub tape either.
+		expect(hub.runtime.memory.last("shop.debug")).toBeUndefined();
+	});
+
 	it("S24.1: snapshot request is answered with hub-authoritative content", async () => {
 		const hub = makeRuntime("hub");
 		const tapeHub = createTapeHub(hub.runtime);

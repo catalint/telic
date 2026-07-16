@@ -94,6 +94,13 @@ export function createOtelTap(opts: OtelTapOptions): Tap {
 
 function isFlatPrimitiveRecord(value: unknown): value is Record<string, string | number | boolean> {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	// Only PLAIN objects flatten to span attributes. Date/RegExp/Map/Set/class
+	// instances have zero enumerable OWN values, which makes .every() vacuously
+	// true — they'd be emitted as an empty attribute bag, dropping their state.
+	// Route them to the json fallback instead (an empty `{}` literal still flattens
+	// to an empty event, as intended — S27.4).
+	const proto = Object.getPrototypeOf(value);
+	if (proto !== Object.prototype && proto !== null) return false;
 	return Object.values(value).every(isAttributeValue);
 }
 

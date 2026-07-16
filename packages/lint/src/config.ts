@@ -33,7 +33,9 @@ export function parseConfig(value: unknown): ParseConfigResult {
 		if (!isPlainObject(scopesValue)) {
 			return { ok: false, error: "config.scopes must be an object of scope -> glob[]" };
 		}
-		const scopes: Record<string, readonly string[]> = {};
+		// Prototype-free accumulator so a scope literally named "__proto__"
+		// becomes an ordinary own property instead of polluting the prototype.
+		const scopes: Record<string, readonly string[]> = Object.create(null);
 		for (const scopeName of Object.keys(scopesValue)) {
 			const globsValue: unknown = Reflect.get(scopesValue, scopeName);
 			if (!Array.isArray(globsValue)) {

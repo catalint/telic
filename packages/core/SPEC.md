@@ -494,7 +494,13 @@ of a dispatch() call, never from queues, timers, retries, or transports.
 3-revised. Re-declaring an already-declared name fires `duplicate-intent`
    ONCE PER NAME per runtime (not per re-declaration) — hot-module-reload
    re-evaluation must not train developers to ignore diagnostics. First
-   declaration's config still wins (S12.1 unchanged).
+   declaration's config still wins (S12.1 unchanged): the handle RETURNED by a
+   re-declaration records with the FIRST declaration's config (exposure, redact,
+   tags, schemas), NOT the freshly-passed one — so `describe()` (which reads the
+   frozen first meta) and the live handle can never diverge (D26). The
+   `missing-exposure` diagnostic (S1.5) is likewise evaluated against the first
+   (effective) config. A second call with a different config only shapes the
+   caller's static type; runtime behavior is unchanged.
 
 ## S22. Cross-tab transport — BroadcastChannel (src/transports/broadcast.ts)
 
@@ -557,6 +563,12 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    (context) => unknown }>`; subscribes to the actor, settles the attempt on
    entering mapped states (first-write-wins protects races); returns
    unsubscribe.
+5. The `map` lookup is an OWN-property read. A machine state whose name
+   collides with an `Object.prototype` key (`toString`, `constructor`,
+   `__proto__`, `valueOf`, …) and is not present in `map` is treated as
+   unmapped — the attempt stays active, the subscription is untouched, and
+   nothing throws — upholding the adapter's "degrades to observing nothing
+   rather than crashing" doctrine for any state name (D27).
 
 ## S26. Devtools overlay (src/devtools.ts)
 
@@ -584,3 +596,9 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    mark.at where the SpanLike accepts one.
 3. Spans for attempts whose begun mark was ring-evicted before settle: the
    terminal mark without a live span is a silent no-op (mirror of S13.3).
+4. `noted` data flattens to span-event attributes ONLY when it is a PLAIN
+   object whose own values are all primitives (string/number/boolean); a plain
+   `{}` yields an empty event. Any non-plain object (Date, RegExp, Map, Set,
+   class instance) — whose enumerable OWN values are empty, which would
+   otherwise flatten to an empty attribute bag and silently drop its state —
+   takes the JSON-string fallback instead, preserving the value.

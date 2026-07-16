@@ -37,19 +37,27 @@ function collectImportBindings(sourceFile: ts.SourceFile): ImportBindings {
 		// into scope — it must NOT make the file eligible, or a coincidental
 		// local `handle`/`intent`/… would be a false positive (L3.1).
 		if (clause === undefined || clause.isTypeOnly) continue;
-		if (isTelicSpecifier) eligible = true;
 		const bindings = clause.namedBindings;
-		if (bindings === undefined) continue;
-		if (ts.isNamedImports(bindings)) {
-			for (const element of bindings.elements) {
-				if (element.isTypeOnly) continue;
-				const importedName = (element.propertyName ?? element.name).text;
-				const canonical = canonicalFn(importedName);
-				if (canonical !== undefined) aliases.set(element.name.text, canonical);
+		// Eligibility requires the telic import to introduce a RUNTIME binding:
+		// a default import, a namespace import, or >=1 value (non-type-only)
+		// named element. An all-type-only inline import (`import { type X }`)
+		// binds no telic value and must NOT make the file eligible (L3.1).
+		let hasRuntimeBinding = clause.name !== undefined;
+		if (bindings !== undefined) {
+			if (ts.isNamespaceImport(bindings)) {
+				hasRuntimeBinding = true;
+				if (isTelicSpecifier) namespaces.add(bindings.name.text);
+			} else if (ts.isNamedImports(bindings)) {
+				for (const element of bindings.elements) {
+					if (element.isTypeOnly) continue;
+					hasRuntimeBinding = true;
+					const importedName = (element.propertyName ?? element.name).text;
+					const canonical = canonicalFn(importedName);
+					if (canonical !== undefined) aliases.set(element.name.text, canonical);
+				}
 			}
-		} else if (ts.isNamespaceImport(bindings) && isTelicSpecifier) {
-			namespaces.add(bindings.name.text);
 		}
+		if (isTelicSpecifier && hasRuntimeBinding) eligible = true;
 	}
 	return { eligible, aliases, namespaces };
 }

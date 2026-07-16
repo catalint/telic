@@ -84,7 +84,7 @@ export function scopeOwnership(
 	for (const call of calls) {
 		if (call.fn === "dispatch") continue;
 		const scope = scopeOf(call.name);
-		const globs = scopes?.[scope];
+		const globs = scopes !== undefined && Object.hasOwn(scopes, scope) ? scopes[scope] : undefined;
 		if (globs !== undefined) {
 			const resolved = globs.map((glob) => resolveGlob(configDir, glob));
 			if (matchAnyGlob(resolved, call.file)) continue;

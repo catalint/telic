@@ -254,3 +254,34 @@ memory-not-truth, boundaries-only dispatch, prefer run()) plus a paste-block
 for host agent configs. Rationale: docs that live in node_modules are the
 only docs a coding agent reliably has at hand; the spec-first discipline
 already produced agent-grade material — this packages it for discovery.
+
+**D26. A re-declared handle records with the FIRST config, not the second
+(2026-07-16).** `describe()` always reported the first declaration's config
+(S12.1), but the handle RETURNED by a runtime-level re-declaration was being
+built from the freshly-passed config — so a second `intent(name, …)` (HMR
+re-eval, or two call sites) with a weaker `exposure`/`redact` produced a live
+handle that recorded RAW payloads while `describe()` still advertised the
+strict first config. A privacy audit reading `describe()` could not see the
+divergence. Decided: `declareIntent` now mirrors what `declareOrGet` already
+did for the module-level facade — it rebuilds the returned handle (and gates
+the `missing-exposure` diagnostic) from the stored first config. First-config-
+wins is now the invariant for BEHAVIOR, not just the descriptor. Rejected:
+letting the second config win (would make re-declaration a silent redaction-
+bypass vector); making re-declaration throw (violates S1.3's "the second
+declaration still works"). SPEC: S1 amendment (3-revised) extended.
+
+**D27. Dynamic reads on plain objects keyed by untrusted strings must be
+OWN-property lookups (2026-07-16).** Three sites indexed a plain object literal
+with a string sourced from user/model input — an xstate machine state name
+(`xstate.ts`), a lint intent scope name (`lint/rules.ts`), a flow step name
+(`flow.ts`) — and one built such a map by write (`lint/config.ts`). A key
+colliding with an `Object.prototype` member (`toString`, `constructor`,
+`__proto__`, `valueOf`, …) resolved the INHERITED value instead of `undefined`,
+bypassing the `=== undefined` guard and either crashing (`.map`/`.reject` on a
+function) or polluting the accumulator's prototype. Decided: any such read uses
+`Object.hasOwn(obj, key) ? obj[key] : undefined`, and any such accumulator is
+built prototype-free (`Object.create(null)`). This is a repo convention, not a
+one-off: it feeds the Copilot review instructions and is the reason the crash
+class can't silently regress. Rejected: sanitizing/rejecting the offending key
+names (telic does not own its callers' state or intent taxonomies — a state
+literally named `constructor` is valid and must simply be handled).

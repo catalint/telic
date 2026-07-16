@@ -126,6 +126,35 @@ describe("S27: OpenTelemetry tap", () => {
 		expect(callsOfType(span, "end")).toEqual([{ type: "end", endTime: 1000 }]);
 	});
 
+	it("S27.4: given a Date note (a non-plain object with zero enumerable own values), when tapped, then it takes the json fallback instead of an empty event", () => {
+		const { rt } = makeRuntime();
+		const { tracer, spans } = makeFakeTracer();
+		rt.tap(createOtelTap({ tracer }));
+
+		const attempt = rt.intent("cart.checkout").begin();
+		const when = new Date("2020-01-01T00:00:00.000Z");
+		attempt.note(when);
+		attempt.fulfill();
+
+		const span = only(spans);
+		expect(callsOfType(span, "addEvent")).toEqual([
+			{ type: "addEvent", name: "noted", attributes: { json: JSON.stringify(when) } },
+		]);
+	});
+
+	it("S27.4: given an empty plain-object note, when tapped, then it still flattens to an empty event (unchanged)", () => {
+		const { rt } = makeRuntime();
+		const { tracer, spans } = makeFakeTracer();
+		rt.tap(createOtelTap({ tracer }));
+
+		const attempt = rt.intent("cart.checkout").begin();
+		attempt.note({});
+		attempt.fulfill();
+
+		const span = only(spans);
+		expect(callsOfType(span, "addEvent")).toEqual([{ type: "addEvent", name: "noted", attributes: {} }]);
+	});
+
 	it("S27.2: given a rejected mark, when tapped, then the span gets ERROR status and ends", () => {
 		const { rt } = makeRuntime();
 		const { tracer, spans } = makeFakeTracer();

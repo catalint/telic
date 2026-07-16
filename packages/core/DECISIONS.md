@@ -214,3 +214,21 @@ timeline to OTel spans/baggage and structured logs; a dev-mode response-header
 channel can flow server breadcrumbs back into the client tape via wire +
 ingest. AP9 records the anti-pattern. This makes telic complementary to OTel
 shops rather than competitive with them.
+
+**D23. v0.3.0 — the roadmap finalized (2026-07-16).** Shipped: all three
+transports (BroadcastChannel gossip, postMessage with mandatory origin
+allow-listing, SharedWorker authoritative hub — forward-only by design: no
+onAttach backlog re-broadcast, catch-up is exclusively the hub's snapshot
+request; loop safety is send-side via foreign-origin checks); XState adapter
+(bindActor identity registration, no ambient fallback — machine lifetimes
+outlive call stacks; settleFromMachine's map-return IS the outcome knob);
+Trusted-Types-safe plain-DOM devtools; OTel tap (structural tracer). New
+package @telic/lint (peer typescript >= 5.5) — recorded finding: TypeScript
+7's native compiler REMOVED the classic programmatic API from the root
+export (relocated to unstable/*), so tooling that consumes the compiler API
+must build against 5.x/6.x while 7-native remains typecheck/emit-only; the
+lint CLI dev-builds on 5.9 and runs on whatever the host provides >= 5.5.
+Docs: PostHog recipe with trace-based CI parity, P12 contract-subpath
+conventions. Remaining roadmap after this release: intentionally empty —
+future work is demand-driven (AsyncContext Tier-1.5 when the platform ships
+it; anything else arrives as adopter asks).

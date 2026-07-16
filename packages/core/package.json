@@ -1,6 +1,6 @@
 {
 	"name": "@telic/core",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "A recorded intent + memory layer for frontends — record-first user-intent lifecycle with in-page queryable session memory.",
 	"license": "MIT",
 	"author": "Catalin Tanasescu",
@@ -89,6 +89,30 @@
 		"./adapters/tanstack-query": {
 			"types": "./dist/adapters/tanstack-query.d.ts",
 			"default": "./dist/adapters/tanstack-query.js"
+		},
+		"./transports/broadcast": {
+			"types": "./dist/transports/broadcast.d.ts",
+			"default": "./dist/transports/broadcast.js"
+		},
+		"./transports/post-message": {
+			"types": "./dist/transports/post-message.d.ts",
+			"default": "./dist/transports/post-message.js"
+		},
+		"./transports/shared-worker": {
+			"types": "./dist/transports/shared-worker.d.ts",
+			"default": "./dist/transports/shared-worker.js"
+		},
+		"./adapters/xstate": {
+			"types": "./dist/adapters/xstate.d.ts",
+			"default": "./dist/adapters/xstate.js"
+		},
+		"./devtools": {
+			"types": "./dist/devtools.d.ts",
+			"default": "./dist/devtools.js"
+		},
+		"./taps/otel": {
+			"types": "./dist/taps/otel.d.ts",
+			"default": "./dist/taps/otel.js"
 		}
 	},
 	"scripts": {
@@ -101,6 +125,7 @@
 	"devDependencies": {
 		"@types/bun": "^1.3.14",
 		"typescript": "^7.0.0",
-		"@tanstack/query-core": "^5.90.0"
+		"@tanstack/query-core": "^5.90.0",
+		"xstate": "^5.32.0"
 	}
 }

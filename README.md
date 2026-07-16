@@ -303,6 +303,7 @@ The design is documented in full and travels with the package (in `packages/core
 | [PATTERNS.md](packages/core/PATTERNS.md) | **How** — patterns (P1–P10) and anti-patterns (AP1–AP8) for using it well |
 | [APPROACHES.md](packages/core/APPROACHES.md) | **Which** — a per-axis decision guide when there's more than one reasonable option |
 | [DECISIONS.md](packages/core/DECISIONS.md) | **When / what changed** — the append-only log of design decisions and what was rejected |
+| [Recipes](packages/core/docs/recipes/) | **Worked examples** — full end-to-end wiring against a real vendor, starting with PostHog |
 
 ## Status
 
@@ -322,15 +323,12 @@ against TypeScript 5.5 through the latest release on every commit, including cro
 - **@telic/react** — hooks with StrictMode/HMR semantics *specified and contract-tested*
   (SPEC R1–R6), built on the doctrine that mounts are not intents: `useIntent`, `useHandle`,
   memory hooks via `useSyncExternalStore`, `<TelicProvider>`.
+- **@telic/lint** — the taxonomy governance CLI: flags setter-like intent names, cross-file
+  duplicate declarations, scope-ownership violations, and dead contracts (`command()` with no
+  `handle()`, or vice versa).
 
 ## Roadmap
 
-- **PostHog recipe** — a worked example over the analytics tap's `trace` hook (the parity
-  introspection shipped in 0.2.0).
-- **Taxonomy lint tooling** — enforce goal-shaped intent names (the setter-name diagnostic)
-  at author time; contract-subpath conventions + dead-contract detection for monorepos.
-- **Cross-tab transports** — BroadcastChannel as the zero-setup default, a SharedWorker hub
-  for an authoritative cross-tab tape.
 
 ## License
 

@@ -38,6 +38,12 @@ const budgets: readonly Budget[] = [
 	{ entry: "./wire", file: "src/wire.ts", maxBrotliBytes: 1050 },
 	{ entry: "./testing", file: "src/testing.ts", maxBrotliBytes: 4700 },
 	{ entry: "./adapters/tanstack-query", file: "src/adapters/tanstack-query.ts", maxBrotliBytes: 870 },
+	{ entry: "./transports/broadcast", file: "src/transports/broadcast.ts", maxBrotliBytes: 1750 },
+	{ entry: "./transports/post-message", file: "src/transports/post-message.ts", maxBrotliBytes: 1750 },
+	{ entry: "./transports/shared-worker", file: "src/transports/shared-worker.ts", maxBrotliBytes: 2130 },
+	{ entry: "./adapters/xstate", file: "src/adapters/xstate.ts", maxBrotliBytes: 690 },
+	{ entry: "./devtools", file: "src/devtools.ts", maxBrotliBytes: 930 },
+	{ entry: "./taps/otel", file: "src/taps/otel.ts", maxBrotliBytes: 480 },
 ];
 
 type Measurement = {

@@ -317,3 +317,73 @@ Failure: interleaved users, a worse OpenTelemetry, and — if flow() is used
 for server sagas — a worse Temporal with no retries by design. Correction:
 P11's contract. The server contributes correlation; its memory lives where it
 already lives (traces, logs, the database).
+
+### P12. Contract subpaths in compiled monorepos
+
+A domain that wants to be `dispatch()`-invokable across a package boundary
+(P7) has a typing problem plain JS doesn't: the caller only has the OTHER
+package's COMPILED `.d.ts`, never its source — declaration merging
+(`IntentRegistry`) and `command()` stubs have to survive that boundary, or
+every cross-package caller falls back to an untyped string.
+
+The convention (D18): each domain ships a TYPES-ONLY subpath —
+`@acme/checkout/intents`, never `@acme/checkout` itself — that does exactly
+three things: declares the domain's intents, augments `IntentRegistry`, and
+exports `command()` stubs for the capabilities other domains may invoke.
+Consumers import the contract; they never import the implementation.
+
+```ts
+// packages/checkout/src/intents.ts — the ONLY file allowed to augment "checkout.*"
+import type { IntentTypes } from "@telic/core"
+import { command } from "@telic/core/mediate"
+
+declare module "@telic/core" {
+	interface IntentRegistry {
+		"checkout.submit": IntentTypes<{ cartId: string }, { orderId: string }, { code: string }>
+	}
+}
+
+export const submitCheckout = command("checkout.submit")
+```
+
+```ts
+// packages/support/src/widget.ts — a DIFFERENT domain, invoking across the boundary
+import { submitCheckout } from "@acme/checkout/intents"
+
+const attempt = submitCheckout({ cartId })
+```
+
+`support` gets a typed, jump-to-definition-able stub whose payload/outcome/
+rejection types flow from the SAME declaration `checkout` runs against — no
+hand-written `dispatch("checkout.submit", …)` string anywhere outside the
+owning domain.
+
+**Ownership: exactly one file per scope.** The contract file for a scope
+(`checkout.*`) is the ONLY place that may declare `IntentRegistry` entries
+under it. Two domains augmenting the same scope is a silent last-write-wins
+merge TypeScript will not warn about — declaration merging combines
+structurally, it doesn't detect ownership conflicts. `@telic/lint`'s
+`scope-ownership` rule is the enforcement, not convention alone: configure
+`"scopes": { "checkout": ["packages/checkout/**"] }`, and any `intent()` /
+`handle()` / `command()` literal under `checkout.*` declared outside that
+glob fails CI before it can collide.
+
+**The mechanism is verified, not assumed.** Declaration merging across a
+monorepo's SOURCE files is unsurprising; the property this pattern actually
+depends on is that it still works once `@acme/checkout` is `tsc`-compiled to
+`.d.ts` and consumed as an ordinary package dependency — bundlers and older
+TS versions have a real history of mishandling cross-package augmentation.
+Don't take that on faith: a CI consumer-matrix (a throwaway package that
+installs the built tarball and imports the contract subpath under several
+supported TS versions) is what actually proves the augmentation flows
+through the compiled boundary — the same mechanism telic's own
+`IntentRegistry` is checked against on every commit (DECISIONS D18/D19).
+
+**Honest caveats.** The contract subpath is types-only by convention, not by
+enforcement — nothing stops someone from re-exporting implementation from it
+except review discipline; no lint rule catches that specific leak yet.
+`command()` stubs are DX sugar over `dispatch()` (S15.8), not a typing
+capability `dispatch()` lacks on its own — they just make the string name
+disappear from call sites. The runtime behavior underneath, including a
+`TELIC_NO_HANDLER` rejection when nothing has registered yet, is identical
+either way.

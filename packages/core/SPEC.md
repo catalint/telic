@@ -495,3 +495,92 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    ONCE PER NAME per runtime (not per re-declaration) — hot-module-reload
    re-evaluation must not train developers to ignore diagnostics. First
    declaration's config still wins (S12.1 unchanged).
+
+## S22. Cross-tab transport — BroadcastChannel (src/transports/broadcast.ts)
+
+1. `connectBroadcastChannel(runtime, opts?): () => void` — opts: `channel?`
+   (name, default "telic"), `send?: readonly IntentPattern[]` (default all),
+   `accept?: readonly IntentPattern[]` (default all), `tab?: string` (this
+   tab's id for origin stamping; default from the runtime id generator),
+   `channelFactory?` (structural `{ postMessage, addEventListener/onmessage,
+   close }` for tests; default `new BroadcastChannel(name)` feature-detected —
+   absent → inert + one `tap-error`-family diagnostic).
+2. Outgoing: a tap serializing matching LOCAL marks (never marks that already
+   carry a foreign `origin` — loop safety) via the wire format, stamped
+   `origin.tab`. Exposure rules: "local" never sent; "private" sent as-is.
+3. Incoming: wire-parse (tolerant), filter by `accept`, `runtime.ingest()`.
+4. Disconnect closes the channel and detaches the tap.
+
+## S23. Cross-app transport — postMessage (src/transports/post-message.ts)
+
+1. `connectWindow(runtime, opts): () => void` — opts: `target` (structural
+   `{ postMessage(data, targetOrigin) }`), `targetOrigin: string` (REQUIRED,
+   never defaulted, "*" rejected with a thrown TypeError at connect —
+   construction-time author error), `accept: (origin: string) => boolean`
+   (REQUIRED — mandatory allow-listing), `listen?` (structural event source
+   for incoming message events; default window, feature-detected), plus
+   send/accept pattern filters and `app?` origin stamp as in S22.
+2. Same wire/loop-safety/exposure semantics as S22; incoming events are
+   dropped unless `accept(event.origin)` passes.
+
+## S24. Cross-tab hub — SharedWorker (src/transports/shared-worker.ts)
+
+1. Two halves, both structurally injected and unit-testable with fake ports:
+   `createTapeHub(runtime): { connect(port) }` — runs INSIDE the worker,
+   owning an authoritative runtime: ingests marks arriving from any port,
+   re-broadcasts them to every OTHER port, and answers `{ type: "snapshot" }`
+   requests with the hub runtime's `memory.snapshot()` (the authoritative
+   cross-tab answer BroadcastChannel gossip cannot give).
+2. `connectSharedWorker(runtime, opts): { disconnect(): void;
+   requestSnapshot(): Promise<MemorySnapshot> }` — client half; opts: `port`
+   (structural MessagePort) or `workerFactory?` (default
+   `new SharedWorker(url).port`, feature-detected → inert + diagnostic when
+   absent), send/accept patterns, `tab?` stamp. Outgoing/incoming semantics
+   as S22 (wire + loop safety + exposure).
+3. No timers, no reconnection logic (initiative boundary): a dead port is the
+   app's problem to reconnect.
+
+## S25. XState adapter (src/adapters/xstate.ts)
+
+1. Structural only — no xstate import in src (xstate ^5 is a devDependency
+   for tests). Works against the v5 inspection API shape.
+2. `createIntentInspector(runtime): (event) => void` — pass as
+   `createActor(machine, { inspect })`; `@xstate.snapshot`/transition events
+   for actors REGISTERED via bindActor produce `linked` marks
+   `{ kind: "xstate", actorId, state, event }` on the bound attempt (ingest
+   path, same mechanism as the TanStack adapter). Unregistered actors are
+   ignored (no ambient fallback here — machine lifetimes outlive call stacks).
+3. `bindActor(attempt, actorRef): () => void` — registers actor identity
+   (sessionId) → attempt; returns unbind.
+4. `settleFromMachine(attempt, actorRef, map): () => void` — map:
+   `Record<stateValueString, { fulfill?: (context) => unknown } | { reject?:
+   (context) => unknown }>`; subscribes to the actor, settles the attempt on
+   entering mapped states (first-write-wins protects races); returns
+   unsubscribe.
+
+## S26. Devtools overlay (src/devtools.ts)
+
+1. `mountOverlay(runtime, opts?): () => void` — a plain-DOM panel (no
+   framework) showing `inProgress()` and a tape tail (last ~50 marks),
+   updating via a tap. `opts`: `container?` (default document.body,
+   feature-detected → inert), `hotkey?` (default none — the HOST decides
+   visibility; when set, toggles panel display).
+2. TRUSTED-TYPES SAFE: built exclusively with createElement/textContent —
+   the string "innerHTML" must not appear in the module.
+3. Styles inline on elements (no stylesheet injection); everything namespaced
+   `data-telic-devtools` so hosts can restyle or purge.
+4. Intended for dev builds; costs nothing unless mounted. Unmount fn removes
+   the panel and detaches the tap.
+
+## S27. OpenTelemetry tap (src/taps/otel.ts)
+
+1. Structural injection — NO @opentelemetry import: `createOtelTap(opts)`
+   with `tracer: { startSpan(name, opts?): SpanLike }` where SpanLike =
+   `{ setAttribute(k, v); addEvent(name, attrs?); setStatus(s); end(t?) }`.
+2. begun → startSpan(`intent:<name>`) with attributes (telic.attempt_id,
+   telic.intent, telic.key when present); noted → addEvent; fulfilled →
+   setStatus OK + end; rejected → setStatus ERROR + end; abandoned →
+   setStatus OK + attribute telic.abandoned=why + end. Span timestamps use
+   mark.at where the SpanLike accepts one.
+3. Spans for attempts whose begun mark was ring-evicted before settle: the
+   terminal mark without a live span is a silent no-op (mirror of S13.3).

@@ -1,0 +1,7 @@
+{
+	"scopes": {
+		"checkout": ["src/checkout/**"]
+	},
+	"requireScopeOwnership": false,
+	"deadContract": true
+}

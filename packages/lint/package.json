@@ -1,0 +1,47 @@
+{
+	"name": "@telic/lint",
+	"version": "0.1.0",
+	"description": "Taxonomy-governance CLI for @telic — lifts telic's runtime diagnostics to authoring time. Statically lints intent/command/handle/dispatch declarations for setter-like names, cross-file duplicates, scope ownership, and dead contracts.",
+	"license": "MIT",
+	"author": "Catalin Tanasescu",
+	"type": "module",
+	"sideEffects": false,
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/catalint/telic.git",
+		"directory": "packages/lint"
+	},
+	"homepage": "https://github.com/catalint/telic#readme",
+	"bugs": "https://github.com/catalint/telic/issues",
+	"keywords": [
+		"intent",
+		"user-intent",
+		"lint",
+		"cli",
+		"taxonomy",
+		"governance",
+		"static-analysis",
+		"typescript",
+		"telic"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"bin": {
+		"telic-lint": "./dist/cli.js"
+	},
+	"files": ["dist", "README.md", "SPEC.md"],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test src/",
+		"prepack": "bun run build"
+	},
+	"peerDependencies": {
+		"typescript": ">=5.5"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.14",
+		"typescript": "^5.9.0"
+	}
+}

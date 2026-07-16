@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 — 2026-07-16
+
+- **Cross-tab & cross-app transports**: `transports/broadcast` (BroadcastChannel gossip), `transports/post-message` (iframe/micro-frontend bridging with mandatory origin allow-listing), and `transports/shared-worker` (authoritative cross-tab hub with snapshot requests). Forward-only, loop-safe, exposure-respecting.
+- **XState adapter** (`adapters/xstate`): `bindActor` + `createIntentInspector` provenance links, `settleFromMachine` — structural source, verified against real XState v5.
+- **Devtools overlay** (`devtools`): plain-DOM, Trusted-Types-safe, framework-free.
+- **OpenTelemetry tap** (`taps/otel`): attempts as spans via structural tracer injection.
+- **@telic/lint 0.1.0** (new package): taxonomy governance CLI — setter-like names, cross-file duplicate intents, scope ownership, dead-contract detection. TypeScript compiler API via the host's install (peer >= 5.5).
+- **PostHog recipe** (`docs/recipes/posthog.md`) with trace-hook-based CI parity assertions; **P12** contract-subpath conventions for compiled monorepos; **P11/AP9** server-correlation contract.
+
 ## 0.2.0 — 2026-07-16
 
 - **@telic/react 0.1.0** (new package): `useIntent`, `useHandle`, `useMemorySeq`/`useInProgress`/`useLastAttempt`, `<TelicProvider>` — with StrictMode double-mount and HMR semantics specified (SPEC R1–R6) and contract-tested, built on the doctrine that mounts are not intents.

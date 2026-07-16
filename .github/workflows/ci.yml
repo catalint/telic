@@ -12,11 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - uses: actions/setup-node@v4
         with:
           node-version: latest
-        with:
-          bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun run build
@@ -57,6 +57,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: latest
       - run: bun install --frozen-lockfile
       - name: Consumer typecheck (TS ${{ matrix.typescript }}, bundler + node16)
         env:

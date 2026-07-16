@@ -14,7 +14,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: latest
       - run: bun install --frozen-lockfile
@@ -57,7 +57,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: latest
       - run: bun install --frozen-lockfile

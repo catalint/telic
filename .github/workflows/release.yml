@@ -46,3 +46,12 @@ jobs:
           else
             npm publish --provenance --access public
           fi
+      - name: Publish @telic/lint
+        working-directory: packages/lint
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "@telic/lint@$VERSION" version > /dev/null 2>&1; then
+            echo "@telic/lint@$VERSION already published — skipping"
+          else
+            npm publish --provenance --access public
+          fi

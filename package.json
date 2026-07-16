@@ -8,7 +8,7 @@
 	"scripts": {
 		"typecheck": "bun run --filter='*' typecheck",
 		"test": "bun run --filter='*' test",
-		"build": "bun run --filter '@telic/core' build && bun run --filter '@telic/react' build",
+		"build": "bun run --filter '@telic/core' build && bun run --filter '@telic/react' build && bun run --filter '@telic/lint' build",
 		"size": "bun run --filter='*' size"
 	}
 }

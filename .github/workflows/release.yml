@@ -34,8 +34,13 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           if npm view "@telic/core@$VERSION" version > /dev/null 2>&1; then
             echo "@telic/core@$VERSION already published — skipping"
+          elif OUT=$(npm publish --provenance --access public 2>&1); then
+            echo "$OUT"
+          elif echo "$OUT" | grep -q "previously published"; then
+            # npm view can lag replication for brand-new packages; the 403 proves it exists
+            echo "@telic/core@$VERSION already published (view lagged) — skipping"
           else
-            npm publish --provenance --access public
+            echo "$OUT"; exit 1
           fi
       - name: Publish @telic/react
         working-directory: packages/react
@@ -43,8 +48,13 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           if npm view "@telic/react@$VERSION" version > /dev/null 2>&1; then
             echo "@telic/react@$VERSION already published — skipping"
+          elif OUT=$(npm publish --provenance --access public 2>&1); then
+            echo "$OUT"
+          elif echo "$OUT" | grep -q "previously published"; then
+            # npm view can lag replication for brand-new packages; the 403 proves it exists
+            echo "@telic/react@$VERSION already published (view lagged) — skipping"
           else
-            npm publish --provenance --access public
+            echo "$OUT"; exit 1
           fi
       - name: Publish @telic/lint
         working-directory: packages/lint
@@ -52,6 +62,11 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           if npm view "@telic/lint@$VERSION" version > /dev/null 2>&1; then
             echo "@telic/lint@$VERSION already published — skipping"
+          elif OUT=$(npm publish --provenance --access public 2>&1); then
+            echo "$OUT"
+          elif echo "$OUT" | grep -q "previously published"; then
+            # npm view can lag replication for brand-new packages; the 403 proves it exists
+            echo "@telic/lint@$VERSION already published (view lagged) — skipping"
           else
-            npm publish --provenance --access public
+            echo "$OUT"; exit 1
           fi

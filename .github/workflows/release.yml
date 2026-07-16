@@ -21,6 +21,8 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # OIDC trusted publishing requires npm >= 11.5.1 (Node 22 bundles 10.x)
+      - run: npm install -g npm@latest
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run typecheck

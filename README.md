@@ -313,20 +313,22 @@ semver from here; see [CHANGELOG.md](CHANGELOG.md). The emitted type declaration
 against TypeScript 5.5 through the latest release on every commit, including cross-domain
 `IntentRegistry` augmentation across the compiled declaration boundary.
 
+## Packages
+
+- **@telic/core** — the library: runtime, taps (console/breadcrumbs/user-timing/analytics),
+  mediation (`handle`/`dispatch`/`flow`), persistence (`/persist` + `/wire`), the TanStack
+  Query adapter (`/adapters/tanstack-query`), runner-agnostic test helpers (`/testing`),
+  and the agent surface.
+- **@telic/react** — hooks with StrictMode/HMR semantics *specified and contract-tested*
+  (SPEC R1–R6), built on the doctrine that mounts are not intents: `useIntent`, `useHandle`,
+  memory hooks via `useSyncExternalStore`, `<TelicProvider>`.
+
 ## Roadmap
 
-- **React adapter** — hooks that *specify* StrictMode double-mount and HMR re-declaration
-  semantics, not just paper over them.
-- **Persistence tap** — durable memory across a reload or checkout redirect (the next major
-  feature; the unlock for the resume-mid-flight example above).
-- **TanStack Query adapter** — links mutations to their causing attempt, with a clear answer
-  to the internal-retry question (telic never owns execution reliability).
-- **PostHog recipe + analytics-tap parity introspection** — inspect which rules fired and
-  which sinks were reached, so a funnel migration can prove parity.
+- **PostHog recipe** — a worked example over the analytics tap's `trace` hook (the parity
+  introspection shipped in 0.2.0).
 - **Taxonomy lint tooling** — enforce goal-shaped intent names (the setter-name diagnostic)
-  at author time.
-- **Runner-agnostic `/testing` subpath** — helpers to assert intent lifecycles under any test
-  runner.
+  at author time; contract-subpath conventions + dead-contract detection for monorepos.
 - **Cross-tab transports** — BroadcastChannel as the zero-setup default, a SharedWorker hub
   for an authoritative cross-tab tape.
 

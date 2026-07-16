@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — 2026-07-16
+
+- **@telic/react 0.1.0** (new package): `useIntent`, `useHandle`, `useMemorySeq`/`useInProgress`/`useLastAttempt`, `<TelicProvider>` — with StrictMode double-mount and HMR semantics specified (SPEC R1–R6) and contract-tested, built on the doctrine that mounts are not intents.
+- **Persistence tap** (`@telic/core/persist`): storage-backed tape with exposure-aware filtering, resume patterns for cross-reload attempt resurrection, `clearPersistedTape` for erasure paths.
+- **Wire format** (`@telic/core/wire`): zero-dependency structural validators for the versioned mark envelope.
+- **Testing subpath** (`@telic/core/testing`): runner-agnostic `createTestRuntime` (deterministic clock/ids/diagnostics), tape helpers, stable snapshot serializer.
+- **TanStack Query adapter** (`@telic/core/adapters/tanstack-query`): mutation provenance links + `settleFromMutation`; internal retries are `noted` on one attempt, `retryOf` reserved for user-initiated retries.
+- **node16/nodenext type support**: extensioned ESM emit — arethetypeswrong fully green across all resolution modes.
+- **Analytics tap `trace` hook**: per-rule/mark decision record (sent/emitted/deduped/denied/buffered/flushed) for CI-assertable migration parity.
+- `duplicate-intent` now fires once per name per runtime (HMR re-evaluation no longer spams diagnostics).
+- TypeScript 7 (native compiler) toolchain; size budgets extended to all 13 subpaths.
+
 All notable changes to `@telic/core` are recorded here. The project follows
 [semantic versioning](https://semver.org) from 0.1.0 onward.
 

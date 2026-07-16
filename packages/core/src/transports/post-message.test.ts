@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createRuntime } from "../core.js";
 import type { StandardSchemaV1 } from "../standard-schema.js";
-import type { AttemptId, Diagnostic, Exposure, IntentName, Runtime } from "../types.js";
+import type { AttemptId, Diagnostic, IntentName, Runtime } from "../types.js";
 import type { PostMessageListener, PostMessageTarget } from "./post-message.js";
 import { connectWindow } from "./post-message.js";
 
@@ -69,10 +69,9 @@ function passthroughSchema(): StandardSchemaV1<unknown, unknown> {
 	};
 }
 
-function begin(runtime: Runtime, name: IntentName, payload: unknown, exposure?: Exposure): AttemptId {
+function begin(runtime: Runtime, name: IntentName, payload: unknown): AttemptId {
 	const intent = runtime.intent(name, {
 		payload: passthroughSchema(),
-		...(exposure !== undefined ? { exposure } : {}),
 	});
 	return intent.begin(payload).id;
 }
@@ -117,34 +116,6 @@ describe("S23 postMessage transport", () => {
 
 		begin(b.runtime, "deal.close", { id: 2 });
 		expect(a.runtime.memory.last("deal.close")?.origin?.app).toBe("app-B");
-	});
-
-	it("S23.2: exposure — local never leaves the runtime, private travels as the placeholder (same semantics as S22)", () => {
-		const { frameA, frameB } = makeFrameLink(ORIGIN_A, ORIGIN_B);
-		const a = makeRuntime("a");
-		const b = makeRuntime("b");
-		connectWindow(a.runtime, {
-			target: frameA.target,
-			listen: frameA.listener,
-			targetOrigin: ORIGIN_B,
-			accept: (origin): boolean => origin === ORIGIN_B,
-			app: "app-A",
-		});
-		connectWindow(b.runtime, {
-			target: frameB.target,
-			listen: frameB.listener,
-			targetOrigin: ORIGIN_A,
-			accept: (origin): boolean => origin === ORIGIN_A,
-			app: "app-B",
-		});
-
-		begin(a.runtime, "shop.view", { sku: "abc" });
-		begin(a.runtime, "shop.debug", { secret: "xyz" }, "local");
-		begin(a.runtime, "shop.pay", { card: "4242" }, "private");
-
-		expect(b.runtime.memory.last("shop.view")?.payload).toEqual({ sku: "abc" });
-		expect(b.runtime.memory.last("shop.debug")).toBeUndefined(); // local never sent
-		expect(b.runtime.memory.last("shop.pay")?.payload).toBe("[private]");
 	});
 
 	it("S23.2: incoming from a rejected origin is ignored", () => {

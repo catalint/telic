@@ -306,12 +306,10 @@ describe("S6: memory", () => {
 		expect(diagnostics.filter(diagOfCode("listener-error")).length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("S6.7: given a snapshot, when taken, then it is a detached deep copy that excludes local-exposure entries and freezes views", () => {
+	it("S6.7: given a snapshot, when taken, then it is a detached deep copy that freezes views", () => {
 		const { rt } = makeRuntime();
 		const full = rt.intent("sn.full", { fulfilled: numberSchema });
-		const local = rt.intent("sn.local", { exposure: "local" });
 		const attempt = full.begin(); // seq 1
-		local.begin(); // seq 2 — local, excluded from snapshot
 
 		const snap = rt.memory.snapshot();
 		const snapAgain = rt.memory.snapshot();
@@ -319,13 +317,10 @@ describe("S6: memory", () => {
 		// Deep copy — successive snapshots hand back distinct object identities.
 		expect(at(snapAgain.recent, 0)).not.toBe(at(snap.recent, 0));
 
-		// exposure:"local" excluded from active + recent (but still counted by the seq total order).
 		expect(snap.active.some((view) => view.intent === "sn.full")).toBe(true);
-		expect(snap.active.every((view) => view.intent !== "sn.local")).toBe(true);
-		expect(snap.recent.every((mark) => mark.intent !== "sn.local")).toBe(true);
 		expect(snap.recent.length).toBe(1);
 		expect(snap.at).toBe(1000);
-		expect(seqNum(snap.seq)).toBe(2);
+		expect(seqNum(snap.seq)).toBe(1);
 
 		// Frozen views + marks.
 		expect(Object.isFrozen(at(snap.active, 0))).toBe(true);

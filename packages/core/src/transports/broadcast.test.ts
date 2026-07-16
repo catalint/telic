@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createRuntime } from "../core.js";
 import type { StandardSchemaV1 } from "../standard-schema.js";
-import type { AttemptId, Diagnostic, Exposure, IntentName, Runtime } from "../types.js";
+import type { AttemptId, Diagnostic, IntentName, Runtime } from "../types.js";
 import { serializeMarks } from "../wire.js";
 import type { BroadcastChannelLike } from "./broadcast.js";
 import { connectBroadcastChannel } from "./broadcast.js";
@@ -83,10 +83,9 @@ function passthroughSchema(): StandardSchemaV1<unknown, unknown> {
 }
 
 /** Declare (with a payload schema so a payload is accepted) + begin; return the attempt id. */
-function begin(runtime: Runtime, name: IntentName, payload: unknown, exposure?: Exposure): AttemptId {
+function begin(runtime: Runtime, name: IntentName, payload: unknown): AttemptId {
 	const intent = runtime.intent(name, {
 		payload: passthroughSchema(),
-		...(exposure !== undefined ? { exposure } : {}),
 	});
 	return intent.begin(payload).id;
 }
@@ -155,29 +154,6 @@ describe("S22 BroadcastChannel transport", () => {
 
 		expect(b.runtime.memory.last("cart.checkout")).toBeDefined();
 		expect(b.runtime.memory.last("billing.charge")).toBeUndefined(); // sent but not accepted
-	});
-
-	it("S22.2: exposure — local never leaves (both directions), private travels as placeholder", () => {
-		const bus = makeBus();
-		const channelA = bus.channel();
-		const a = makeRuntime("a");
-		const b = makeRuntime("b");
-		connectBroadcastChannel(a.runtime, { channelFactory: (): SpyChannel => channelA, tab: "tab-A" });
-		connectBroadcastChannel(b.runtime, { channelFactory: (): SpyChannel => bus.channel(), tab: "tab-B" });
-
-		begin(a.runtime, "shop.view", { sku: "abc" });
-		begin(a.runtime, "shop.debug", { secret: "xyz" }, "local");
-		begin(a.runtime, "shop.pay", { card: "4242" }, "private");
-
-		expect(b.runtime.memory.last("shop.view")?.payload).toEqual({ sku: "abc" });
-		expect(b.runtime.memory.last("shop.debug")).toBeUndefined(); // local never sent
-		expect(b.runtime.memory.last("shop.pay")?.payload).toBe("[private]");
-		// local mark never even hit A's own channel.
-		expect(channelA.sent.length).toBe(2);
-
-		// Reverse direction: a local mark on B (a name A never used) does not reach A.
-		begin(b.runtime, "audit.trace", { secret: "qqq" }, "local");
-		expect(a.runtime.memory.last("audit.trace")).toBeUndefined();
 	});
 
 	it("S22.3: malformed incoming is dropped silently", () => {

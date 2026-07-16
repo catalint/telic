@@ -11,12 +11,12 @@ reports. You'll get an acknowledgment within a few days.
 
 The most security-relevant surfaces, in order of interest:
 
-- **The tape's exposure fidelity** — telic must honor the `exposure` a caller
-  declared: `local` payloads never reach persistence, transports, or the agent
-  surface, and `private` payloads travel only as the `"[private]"` placeholder.
-  A write-time `transform` further shrinks what's recorded. Any path that moves
-  a payload further than its declared `exposure` allows — including a lost or
-  LRU-evicted exposure defaulting to a wider reach — is a vulnerability.
+- **Faithful recording (no egress policy)** — telic records a mark verbatim and
+  forwards it to every attached tap, persistence store, and transport; it has no
+  `exposure`/reach class and no payload scrubbing (removed in D30). Keeping raw
+  identities off the payload is the integrating app's job (PATTERNS AP7). A telic
+  bug that corrupts or drops a recorded mark, or routes one to a sink the caller
+  never wired, is in scope.
 - **Transports** — `transports/post-message` requires explicit origin
   allow-listing and rejects `targetOrigin: "*"`; incoming payloads on all
   transports are wire-validated before ingestion. Bypasses of either are

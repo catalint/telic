@@ -2,7 +2,7 @@
  * Cross-app transport — postMessage (SPEC S23).
  *
  * Bridges two independently-loaded apps/frames on (potentially) different
- * origins. Same wire / loop-safety / exposure semantics as the BroadcastChannel
+ * origins, sharing the wire / loop-safety semantics of the BroadcastChannel
  * transport (S22), plus two mandatory guards this cross-origin surface demands:
  * `targetOrigin` is REQUIRED and `"*"` is rejected with a thrown TypeError at
  * connect (a construction-time author error, like the analytics tap's rule
@@ -12,8 +12,6 @@
  */
 import { type CompiledPattern, compilePattern, matchesPattern } from "../pattern.js";
 import type {
-	AttemptView,
-	Exposure,
 	IntentPattern,
 	Mark,
 	MarkOrigin,
@@ -85,13 +83,6 @@ function generateAppId(): string {
 	return `app-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
-/** Exposure of the mark's attempt: the view is authoritative; fall back to a begun mark's own field. */
-function exposureOf(mark: Mark, view: AttemptView | undefined): Exposure {
-	if (view !== undefined) return view.exposure;
-	if (mark.kind === "begun") return mark.exposure;
-	return "full";
-}
-
 function compileFilter(
 	patterns: readonly IntentPattern[] | undefined,
 ): readonly CompiledPattern[] | undefined {
@@ -102,14 +93,12 @@ function matchesFilter(compiled: readonly CompiledPattern[] | undefined, mark: M
 	return compiled === undefined || compiled.some((pattern) => matchesPattern(pattern, mark.intent));
 }
 
-/** Loop safety + exposure + send filter — the outgoing gate. */
+/** Loop safety + send filter — the outgoing gate. */
 function shouldSend(
 	mark: Mark,
-	view: AttemptView | undefined,
 	sendFilter: readonly CompiledPattern[] | undefined,
 ): boolean {
 	if (mark.origin !== undefined) return false; // foreign — never re-send (loop safety)
-	if (exposureOf(mark, view) === "local") return false; // never leaves the runtime
 	return matchesFilter(sendFilter, mark);
 }
 
@@ -157,8 +146,8 @@ export function connectWindow(runtime: Runtime, opts: ConnectWindowOptions): () 
 	// Forward-only live gossip: NO onAttach (see the BroadcastChannel transport).
 	const tap: Tap = {
 		id: TAP_ID,
-		onMark(mark: Mark, view: AttemptView | undefined): void {
-			if (!shouldSend(mark, view, sendFilter)) return;
+		onMark(mark: Mark): void {
+			if (!shouldSend(mark, sendFilter)) return;
 			target.postMessage(serializeMarks([stamp(mark, app)]), targetOrigin);
 		},
 	};

@@ -39,7 +39,6 @@ type MakeRuntimeResult = {
 function makeRuntime(opts?: {
 	mode?: RuntimeMode;
 	limits?: RuntimeLimits;
-	strictPrivacy?: boolean;
 }): MakeRuntimeResult {
 	const clock = { t: 1000 };
 	const diagnostics: Diagnostic[] = [];
@@ -58,7 +57,6 @@ function makeRuntime(opts?: {
 		},
 		...(opts?.mode ? { mode: opts.mode } : {}),
 		...(opts?.limits ? { limits: opts.limits } : {}),
-		...(opts?.strictPrivacy !== undefined ? { strictPrivacy: opts.strictPrivacy } : {}),
 	});
 	return { rt, clock, diagnostics, ids };
 }
@@ -116,22 +114,6 @@ const positiveNumberSchema = schema<number>((value) =>
 const asyncNumberSchema = asyncSchema<number>((value) =>
 	typeof value === "number" ? value : { issues: [{ message: "expected number" }] },
 );
-
-type Credentials = { email: string; token: string };
-
-const credentialsSchema = schema<Credentials>((value) => {
-	if (
-		typeof value === "object" &&
-		value !== null &&
-		"email" in value &&
-		"token" in value &&
-		typeof value.email === "string" &&
-		typeof value.token === "string"
-	) {
-		return { email: value.email, token: value.token };
-	}
-	return { issues: [{ message: "invalid credentials" }] };
-});
 
 function seqNum(seq: Seq): number {
 	return seq;
@@ -291,40 +273,6 @@ describe("S1: declarations", () => {
 		expect(rt.memory.marks().filter(ofKind("begun")).length).toBe(2);
 	});
 
-	it("S1.5: given strictPrivacy, when an intent declares a payload schema with no explicit exposure, then a missing-exposure diagnostic fires once per name", () => {
-		const { rt, diagnostics } = makeRuntime({ strictPrivacy: true });
-		rt.intent("billing.charge", { payload: schema((value) => value) });
-		// Re-declaring the same name must not re-emit the nudge (once per name).
-		rt.intent("billing.charge", { payload: schema((value) => value) });
-		const missing = diagnostics.filter(diagOfCode("missing-exposure"));
-		expect(missing.length).toBe(1);
-		expect(only(missing).intent).toBe("billing.charge");
-	});
-
-	it("S1.5: given strictPrivacy is off (default), when a payload schema lacks an explicit exposure, then no missing-exposure diagnostic fires", () => {
-		const { rt, diagnostics } = makeRuntime();
-		rt.intent("billing.charge", { payload: schema((value) => value) });
-		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(0);
-	});
-
-	it("S1.5: given strictPrivacy, when an explicit exposure is set, then missing-exposure is suppressed", () => {
-		const { rt, diagnostics } = makeRuntime({ strictPrivacy: true });
-		rt.intent("billing.charge", { payload: schema((value) => value), exposure: "private" });
-		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(0);
-	});
-
-	it("S1.5: given strictPrivacy, when a transform is set but no explicit exposure, then missing-exposure STILL fires (a transform is a payload mapping, not a reach declaration — D29)", () => {
-		const { rt, diagnostics } = makeRuntime({ strictPrivacy: true });
-		rt.intent("billing.charge", { payload: schema((value) => value), transform: (value) => value });
-		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(1);
-	});
-
-	it("S1.5: given strictPrivacy, when an intent has no payload schema, then missing-exposure does not fire", () => {
-		const { rt, diagnostics } = makeRuntime({ strictPrivacy: true });
-		rt.intent("billing.charge");
-		expect(diagnostics.filter(diagOfCode("missing-exposure")).length).toBe(0);
-	});
-
 	it("S1.2: given odd but type-valid dotted names, when declared, then the runtime does not throw", () => {
 		const { rt } = makeRuntime();
 		expect(() => rt.intent("weird.")).not.toThrow();
@@ -341,7 +289,7 @@ describe("S1: declarations", () => {
 // ---------------------------------------------------------------------------
 
 describe("S2: begin()", () => {
-	it("S2.1: given a payload, when begun, then the begun mark carries seq/at/payload/exposure and identifies the attempt", () => {
+	it("S2.1: given a payload, when begun, then the begun mark carries seq/at/payload and identifies the attempt", () => {
 		const { rt } = makeRuntime();
 		const flow = rt.intent("cart.checkout", { payload: numberSchema });
 		const attempt = flow.begin(42);
@@ -350,35 +298,8 @@ describe("S2: begin()", () => {
 		expect(seqNum(begun.seq)).toBe(1);
 		expect(begun.at).toBe(1000);
 		expect(begun.payload).toBe(42);
-		expect(begun.exposure).toBe("full");
 		expect(begun.intent).toBe("cart.checkout");
 		expect(begun.attempt).toBe(attempt.id);
-	});
-
-	it("S2.1: given a transform config, when begun, then the mark payload is the transformed value but the handle keeps the raw payload", () => {
-		const { rt } = makeRuntime();
-		const flow = rt.intent("profile.email", {
-			payload: credentialsSchema,
-			transform: (payload) => ({ email: payload.email, token: "[redacted]" }),
-		});
-		const attempt = flow.begin({ email: "u@x.com", token: "secret" });
-		const begun = only(rt.memory.marks().filter(ofKind("begun")));
-		expect(begun.payload).toEqual({ email: "u@x.com", token: "[redacted]" });
-		expect(attempt.payload).toEqual({ email: "u@x.com", token: "secret" });
-	});
-
-	it('S2.1: given exposure "private", when begun, then the mark payload is "[private]" regardless of transform and the handle keeps raw', () => {
-		const { rt } = makeRuntime();
-		const flow = rt.intent("vault.secret", {
-			payload: credentialsSchema,
-			exposure: "private",
-			transform: (payload) => ({ email: payload.email }),
-		});
-		const attempt = flow.begin({ email: "u@x.com", token: "top-secret" });
-		const begun = only(rt.memory.marks().filter(ofKind("begun")));
-		expect(begun.payload).toBe("[private]");
-		expect(begun.exposure).toBe("private");
-		expect(attempt.payload).toEqual({ email: "u@x.com", token: "top-secret" });
 	});
 
 	it("S2.2: given a payload schema that rejects, when begun, then an invalid-payload diagnostic fires and the begin still records", () => {
@@ -995,21 +916,6 @@ describe("S7: taps", () => {
 		rt.intent("de.tach2").begin();
 		expect(marks.length).toBe(1);
 	});
-
-	it('S7.4: given an exposure:"local" intent, when begun, then the local mark is still delivered to taps', () => {
-		const { rt } = makeRuntime();
-		const marks: Mark[] = [];
-		rt.tap({
-			id: "local",
-			onMark: (mark) => {
-				marks.push(mark);
-			},
-		});
-		rt.intent("lo.cal", { exposure: "local" }).begin();
-		const mark = only(marks);
-		expect(mark.kind).toBe("begun");
-		if (mark.kind === "begun") expect(mark.exposure).toBe("local");
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -1267,11 +1173,10 @@ describe("S11: purity & environment", () => {
 // ---------------------------------------------------------------------------
 
 describe("S12: describe()", () => {
-	it("S12.1: given distinct declared intents, when describe() is called, then one descriptor per name carries name/tags/exposure/hasPayloadSchema", () => {
+	it("S12.1: given distinct declared intents, when describe() is called, then one descriptor per name carries name/tags/hasPayloadSchema", () => {
 		const { rt } = makeRuntime();
 		rt.intent("billing.renew", {
 			tags: ["funnel"],
-			exposure: "private",
 			payload: schema((value) => value),
 		});
 		rt.intent("ui.open");
@@ -1280,14 +1185,12 @@ describe("S12: describe()", () => {
 		expect(at(descriptors, 0)).toEqual({
 			name: "billing.renew",
 			tags: ["funnel"],
-			exposure: "private",
 			hasPayloadSchema: true,
 			handled: false,
 		});
 		expect(at(descriptors, 1)).toEqual({
 			name: "ui.open",
 			tags: [],
-			exposure: "full",
 			hasPayloadSchema: false,
 			handled: false,
 		});
@@ -1297,34 +1200,29 @@ describe("S12: describe()", () => {
 		const { rt } = makeRuntime();
 		rt.intent("order.place", {
 			tags: ["first"],
-			exposure: "full",
 			payload: schema((value) => value),
 		});
-		rt.intent("order.place", { tags: ["second"], exposure: "private" });
+		rt.intent("order.place", { tags: ["second"] });
 		const descriptors = rt.describe();
 		expect(descriptors.length).toBe(1);
 		expect(only(descriptors)).toEqual({
 			name: "order.place",
 			tags: ["first"],
-			exposure: "full",
 			hasPayloadSchema: true,
 			handled: false,
 		});
 	});
 
-	it("S1.3-revised: given a runtime-level name re-declared with a weaker config, when the SECOND handle records, then it uses the FIRST declaration's exposure — describe() and the live handle never diverge (D26)", () => {
+	it("S1.3-revised: given a runtime-level name re-declared with a different config, when the SECOND handle is built, then it inherits the FIRST declaration's config — describe() and the live handle never diverge (D26)", () => {
 		const { rt } = makeRuntime();
-		rt.intent("vault.secret", { exposure: "private", payload: schema((value) => value) });
-		// Re-declare with NO exposure. describe() keeps the first config (S12.1);
-		// so must the returned handle — otherwise begin() would record the RAW
-		// payload while describe() still advertised "private" (recording-config bypass).
-		const second = rt.intent("vault.secret", { payload: schema((value) => value) });
-		second.begin("TOP-SECRET-RAW");
-		const begun = only(rt.memory.marks({ pattern: "vault.secret" }).filter(ofKind("begun")));
-		expect(begun.payload).toBe("[private]");
-		expect(rt.describe().find((descriptor) => descriptor.name === "vault.secret")?.exposure).toBe(
-			"private",
-		);
+		rt.intent("vault.secret", { tags: ["first"], payload: schema((value) => value) });
+		// Re-declare with different tags. describe() keeps the first config (S12.1);
+		// so must the returned handle — the two can never diverge.
+		const second = rt.intent("vault.secret", { tags: ["second"] });
+		expect(second.tags).toEqual(["first"]);
+		expect(rt.describe().find((descriptor) => descriptor.name === "vault.secret")?.tags).toEqual([
+			"first",
+		]);
 	});
 
 	it("S12.1: given names declared non-alphabetically (with a re-declaration), when describe() is called, then descriptors are in first-declaration order", () => {
@@ -1349,11 +1247,10 @@ describe("S12: describe()", () => {
 
 	it("S12.3: given a silent runtime, when intents are declared, then describe() still reports them (declaration is ungated) while nothing records", () => {
 		const { rt } = makeRuntime({ mode: "silent" });
-		const load = rt.intent("ssr.load", { exposure: "local" });
+		const load = rt.intent("ssr.load");
 		rt.intent("ssr.render");
 		const descriptors = rt.describe();
 		expect(descriptors.map((descriptor) => descriptor.name)).toEqual(["ssr.load", "ssr.render"]);
-		expect(at(descriptors, 0).exposure).toBe("local");
 		// Declaration is side-effect-free; only recording is silenced (S12.3).
 		load.begin();
 		expect(rt.memory.marks().length).toBe(0);
@@ -1410,7 +1307,6 @@ describe("S10.4/S10.5/S10.7: module-level late binding", () => {
 		expect(checkoutDescriptor).toEqual({
 			name: "s107a.checkout",
 			tags: ["funnel"],
-			exposure: "full",
 			hasPayloadSchema: true,
 			handled: false,
 		});
@@ -1496,7 +1392,7 @@ describe("S10.4/S10.5/S10.7: module-level late binding", () => {
 
 	it("S10.4: given a repeat module-level declaration, then duplicate-intent fires on the current default runtime and the registry keeps the FIRST config", () => {
 		const { rt, diagnostics } = configureRecordingDefault();
-		intent("s104dup.submit", { tags: ["first"], exposure: "private" });
+		intent("s104dup.submit", { tags: ["first"] });
 		const second = intent("s104dup.submit", { tags: ["second"] });
 		const dupDiags = diagnostics
 			.filter(diagOfCode("duplicate-intent"))
@@ -1505,7 +1401,6 @@ describe("S10.4/S10.5/S10.7: module-level late binding", () => {
 		expect(rt.describe().find((d) => d.name === "s104dup.submit")).toEqual({
 			name: "s104dup.submit",
 			tags: ["first"],
-			exposure: "private",
 			hasPayloadSchema: false,
 			handled: false,
 		});
@@ -1513,7 +1408,7 @@ describe("S10.4/S10.5/S10.7: module-level late binding", () => {
 		expect(second.tags).toEqual(["first"]);
 		second.begin();
 		const begun = memory.marks({ pattern: "s104dup.submit" }).filter(ofKind("begun"));
-		expect(only(begun).payload).toBe("[private]");
+		expect(only(begun).kind).toBe("begun");
 	});
 
 	it("S10.5: given the default runtime HAS recorded, when configured again, then late-configure still fires on the new onDiagnostic", () => {

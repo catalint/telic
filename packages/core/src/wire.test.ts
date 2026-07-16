@@ -24,7 +24,6 @@ const BEGUN = {
 	intent: "cart.checkout",
 	attempt: "a1",
 	payload: { items: 2 },
-	exposure: "full",
 } as const;
 
 describe("S19.1 parseMark — required fields per kind", () => {
@@ -122,15 +121,6 @@ describe("S19.1 parseMark — required fields per kind", () => {
 		expect(parseMark({ ...BEGUN, at: Number.NaN })).toBeUndefined();
 		expect(parseMark({ ...BEGUN, intent: "" })).toBeUndefined();
 		expect(parseMark({ ...BEGUN, attempt: 5 })).toBeUndefined();
-	});
-
-	it("S19.1: begun exposure — absent defaults to full, unknown rejects", () => {
-		const { exposure, ...noExposure } = BEGUN;
-		const defaulted = parseMark(noExposure);
-		expect(defaulted?.kind === "begun" && defaulted.exposure).toBe("full");
-		expect(parseMark({ ...BEGUN, exposure: "secret" })).toBeUndefined();
-		const priv = parseMark({ ...BEGUN, exposure: "private" });
-		expect(priv?.kind === "begun" && priv.exposure).toBe("private");
 	});
 
 	it("S19.1: payload/outcome/reason/data pass through as unknown", () => {

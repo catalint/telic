@@ -96,33 +96,6 @@ describe("S18 persistence tap", () => {
 		expect(fake.data.get(KEY)).toBeUndefined();
 	});
 
-	it("S18.2: exposure filtering — local absent, private placeholder", () => {
-		const fake = makeFakeStorage();
-		const rt = createTestRuntime();
-		connectStorage(rt.runtime, { storage: fake.storage });
-		rt.runtime
-			.intent("shop.view", { payload: passthroughSchema() })
-			.begin({ sku: "abc" });
-		rt.runtime
-			.intent("shop.debug", { payload: passthroughSchema(), exposure: "local" })
-			.begin({ secret: "xyz" });
-		rt.runtime
-			.intent("shop.pay", { payload: passthroughSchema(), exposure: "private" })
-			.begin({ card: "4242" });
-
-		const stored = parseWirePayload(fake.data.get(KEY) ?? "");
-		const forIntent = (name: string): readonly Mark[] =>
-			stored.filter((mark) => mark.intent === name);
-		expect(forIntent("shop.debug")).toEqual([]); // local NEVER written
-
-		const paid = at(forIntent("shop.pay"), 0);
-		expect(paid.kind).toBe("begun");
-		if (paid.kind === "begun") expect(paid.payload).toBe("[private]");
-
-		const viewed = at(forIntent("shop.view"), 0);
-		if (viewed.kind === "begun") expect(viewed.payload).toEqual({ sku: "abc" });
-	});
-
 	it("S18.3: resume-matching actives resurrect; others abandon(navigation)", () => {
 		const fake = makeFakeStorage();
 		const writer = createTestRuntime();

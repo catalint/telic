@@ -15,7 +15,6 @@ import type {
 	BeginArgs,
 	BeginOptions,
 	Diagnostic,
-	Exposure,
 	FulfillArgs,
 	HasOptions,
 	Intent,
@@ -124,7 +123,6 @@ type AttemptRecord = {
 	readonly id: AttemptId;
 	readonly intent: IntentName;
 	readonly recordedPayload: unknown;
-	readonly exposure: Exposure;
 	readonly parent: AttemptId | undefined;
 	readonly retryOf: AttemptId | undefined;
 	readonly origin: MarkOrigin | undefined;
@@ -178,8 +176,6 @@ type StoredIntentConfig = {
 	readonly payload?: StandardSchemaV1;
 	readonly fulfilled?: StandardSchemaV1;
 	readonly rejected?: StandardSchemaV1;
-	readonly transform?: (payload: unknown) => unknown;
-	readonly exposure?: Exposure;
 	readonly tags?: readonly string[];
 };
 
@@ -210,7 +206,6 @@ const runtimeInternals = new WeakMap<Runtime, RuntimeInternals>();
 type DeclaredIntentMeta = {
 	readonly name: IntentName;
 	readonly tags: readonly string[];
-	readonly exposure: Exposure;
 	readonly hasPayloadSchema: boolean;
 };
 
@@ -230,7 +225,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 	const generateId: () => string = opts?.id ?? defaultIdGenerator();
 	const markLimit = opts?.limits?.marks ?? 500;
 	const settledLimit = opts?.limits?.settledAttempts ?? 100;
-	const strictPrivacy = opts?.strictPrivacy ?? false;
 	const onDiagnostic = opts?.onDiagnostic;
 
 	let seqCounter = 0;
@@ -238,7 +232,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 	const attemptsById = new Map<AttemptId, AttemptRecord>();
 	const activeIds = new Set<AttemptId>();
 	const settledOrder = new Set<AttemptId>();
-	const localIds = new Set<AttemptId>();
 	// Ordered registry keyed by distinct declared name; drives duplicate-intent
 	// diagnostics AND describe() (first declaration's config wins — Map preserves
 	// insertion order for first-declaration ordering).
@@ -247,7 +240,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 	// installed per-runtime by ./mediate — bare runtimes report false.
 	let handledProbe: (name: IntentName) => boolean = (): boolean => false;
 	const setterWarnedNames = new Set<string>();
-	const missingExposureWarnedNames = new Set<string>();
 	const duplicateWarnedNames = new Set<string>();
 	const keyedActive = new Map<string, { readonly id: AttemptId; readonly handle: unknown }>();
 	const listeners: ListenerEntry[] = [];
@@ -299,7 +291,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 			id: record.id,
 			intent: record.intent,
 			payload: record.recordedPayload,
-			exposure: record.exposure,
 			...(record.key !== undefined ? { key: record.key } : {}),
 			...(record.parent !== undefined ? { parent: record.parent } : {}),
 			...(record.retryOf !== undefined ? { retryOf: record.retryOf } : {}),
@@ -618,7 +609,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 			const meta: DeclaredIntentMeta = Object.freeze({
 				name,
 				tags: Object.freeze([...(config?.tags ?? [])]),
-				exposure: config?.exposure ?? "full",
 				hasPayloadSchema: config?.payload !== undefined,
 			});
 			declarations.set(name, { meta, config: asTyped<StoredIntentConfig | undefined>(config) });
@@ -626,28 +616,13 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 		warnSetterLikeName(name);
 
 		// The FIRST declaration's config governs this name (S12.1/D26): on
-		// re-declaration the freshly-passed config is ignored for BOTH the
-		// diagnostic below and the returned handle, so describe() (which reads the
-		// frozen first meta) and the live handle can never diverge — a second call
-		// with a different exposure/transform only shapes the static type.
+		// re-declaration the freshly-passed config is ignored for the returned
+		// handle, so describe() (which reads the frozen first meta) and the live
+		// handle can never diverge — a second call with different config only shapes
+		// the static type.
 		const effectiveConfig: IntentConfig<PS, FS, RS> | undefined = alreadyDeclared
 			? asTyped<IntentConfig<PS, FS, RS> | undefined>(declarations.get(name)?.config)
 			: config;
-
-		// Same diagnostics-as-linters philosophy as setter-like-name (S1.5): under
-		// strictPrivacy, a payload schema with no explicit exposure has undeclared
-		// reach — nudge once per name at declaration time. A `transform` does NOT
-		// suppress this: it's a payload mapping, not a reach declaration (D28/D29).
-		// Recording proceeds.
-		if (
-			strictPrivacy &&
-			effectiveConfig?.payload !== undefined &&
-			effectiveConfig?.exposure === undefined &&
-			!missingExposureWarnedNames.has(name)
-		) {
-			missingExposureWarnedNames.add(name);
-			emitDiagnostic({ code: "missing-exposure", intent: name });
-		}
 
 		return buildIntentHandle<PS, FS, RS>(name, effectiveConfig);
 	}
@@ -667,8 +642,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 
 		const payloadSchema: StandardSchemaV1 | undefined = config?.payload;
 		const fulfilledSchema: StandardSchemaV1 | undefined = config?.fulfilled;
-		const transform = config?.transform;
-		const exposure: Exposure = config?.exposure ?? "full";
 
 		function beginWith(rawPayload: unknown, beginOpts: BeginOptions | undefined): Attempt<P, F, R> {
 			if (mode === "silent") return buildInertAttempt<P, F, R>(name, asTyped<P>(rawPayload));
@@ -711,19 +684,13 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 			const beganAt = now();
 			const parent = beginOpts?.parent ?? ambientStack[ambientStack.length - 1];
 			const retryOf = beginOpts?.retryOf;
-			const recordedPayload =
-				exposure === "private"
-					? "[private]"
-					: transform !== undefined
-						? transform(asTyped<P>(rawPayload))
-						: rawPayload;
+			const recordedPayload = rawPayload;
 			const beginSeq = nextSeq();
 
 			const record: AttemptRecord = {
 				id: newId,
 				intent: name,
 				recordedPayload,
-				exposure,
 				parent,
 				retryOf,
 				origin: undefined,
@@ -740,7 +707,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 			};
 			attemptsById.set(newId, record);
 			activeIds.add(newId);
-			if (exposure === "local") localIds.add(newId);
 
 			const begunMark: Mark = {
 				kind: "begun",
@@ -749,7 +715,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 				intent: name,
 				attempt: newId,
 				payload: recordedPayload,
-				exposure,
 				...(key !== undefined ? { key } : {}),
 				...(parent !== undefined ? { parent } : {}),
 				...(retryOf !== undefined ? { retryOf } : {}),
@@ -960,14 +925,13 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 		},
 		project: registerProjection,
 		snapshot(): MemorySnapshot {
-			// exposure:"local" attempts/marks are excluded from snapshots (S6.7); taps still see them (S7.4).
 			const active: AttemptView[] = [];
 			for (const id of activeIds) {
 				const record = attemptsById.get(id);
-				if (record === undefined || record.exposure === "local") continue;
+				if (record === undefined) continue;
 				active.push(buildView(record));
 			}
-			const recent = tape.filter((mark) => !localIds.has(mark.attempt));
+			const recent = tape.slice();
 			const cloned = structuredClone({ active, recent });
 			return Object.freeze({
 				at: now(),
@@ -985,7 +949,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 				id: mark.attempt,
 				intent: mark.intent,
 				recordedPayload: undefined,
-				exposure: "full",
 				parent: undefined,
 				retryOf: undefined,
 				origin: mark.origin,
@@ -1015,13 +978,11 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 				if (existing !== undefined) {
 					// Id collision with an unrelated local attempt: the foreign record wins (S10.3).
 					settledOrder.delete(mark.attempt);
-					localIds.delete(mark.attempt);
 				}
 				const record: AttemptRecord = {
 					id: mark.attempt,
 					intent: mark.intent,
 					recordedPayload: mark.payload,
-					exposure: mark.exposure,
 					parent: mark.parent,
 					retryOf: mark.retryOf,
 					origin: mark.origin,
@@ -1038,7 +999,6 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 				};
 				attemptsById.set(record.id, record);
 				activeIds.add(record.id);
-				if (record.exposure === "local") localIds.add(record.id);
 				return;
 			}
 			case "fulfilled":

@@ -2,17 +2,13 @@
  * Persistence tap (SPEC S18) — a tap that persists the rolling tail of marks to
  * Web Storage, plus a restore path that rehydrates a prior session's tape.
  *
- * Exposure filtering is ABSOLUTE: `local` marks are never written; `private`
- * marks are written with the payload placeholder core already stamped. Storage
- * write failures propagate to core's S7.3 tap-error handling (persistence must
- * never break the app). Restore resurrects `resume`-matching active attempts and
- * settles the rest as `abandoned({ why: "navigation" })`.
+ * Storage write failures propagate to core's S7.3 tap-error handling (persistence
+ * must never break the app). Restore resurrects `resume`-matching active attempts
+ * and settles the rest as `abandoned({ why: "navigation" })`.
  */
 import { compilePattern, matchesPattern } from "./pattern.js";
 import type {
 	AttemptId,
-	AttemptView,
-	Exposure,
 	IntentName,
 	IntentPattern,
 	Mark,
@@ -77,33 +73,6 @@ function tryRemove(storage: StorageLike, key: string): void {
 
 function trim(buffer: Mark[], maxMarks: number): void {
 	if (buffer.length > maxMarks) buffer.splice(0, buffer.length - maxMarks);
-}
-
-/** Exposure of the mark's attempt: the view is authoritative; fall back to a begun mark's own field. */
-function exposureOf(mark: Mark, view: AttemptView | undefined): Exposure {
-	if (view !== undefined) return view.exposure;
-	if (mark.kind === "begun") return mark.exposure;
-	return "full";
-}
-
-/**
- * Attempt ids whose marks must never be persisted. Union of two authoritative
- * signals so a `local` mark can't leak even if its `begun` aged out of the ring
- * (retained attempts) or its record was evicted from the settled-LRU (begun scan).
- */
-function localAttemptIds(
-	runtime: Runtime,
-	existing: readonly Mark[],
-): Set<AttemptId> {
-	const ids = new Set<AttemptId>();
-	for (const view of runtime.memory.attempts("*")) {
-		if (view.exposure === "local") ids.add(view.id);
-	}
-	for (const mark of existing) {
-		if (mark.kind === "begun" && mark.exposure === "local")
-			ids.add(mark.attempt);
-	}
-	return ids;
 }
 
 function stampRestored(mark: Mark): Mark {
@@ -230,16 +199,11 @@ export function connectStorage(
 			// Seed the tail so prior history survives the first live write. Gated on
 			// consent: pre-consent marks must not become persistable if it flips on.
 			if (!isEnabled()) return;
-			const localIds = localAttemptIds(runtime, existing);
-			for (const mark of existing) {
-				if (localIds.has(mark.attempt)) continue;
-				buffer.push(mark);
-			}
+			for (const mark of existing) buffer.push(mark);
 			trim(buffer, maxMarks);
 		},
-		onMark(mark: Mark, view: AttemptView | undefined): void {
+		onMark(mark: Mark): void {
 			if (!isEnabled()) return;
-			if (exposureOf(mark, view) === "local") return; // never write local (absolute)
 			buffer.push(mark);
 			trim(buffer, maxMarks);
 			// setItem may throw (quota) — let it propagate; core's S7.3 turns it into a

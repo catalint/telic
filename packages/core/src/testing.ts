@@ -39,7 +39,6 @@ export type CreateTestRuntimeOptions = {
 	readonly start?: number;
 	readonly limits?: RuntimeLimits;
 	readonly mode?: RuntimeMode;
-	readonly strictPrivacy?: boolean;
 };
 
 /** Deterministic runtime: fixed clock (start 1000), counter ids ("t1"…), collected diagnostics. */
@@ -67,9 +66,6 @@ export function createTestRuntime(
 		id: nextId,
 		...(opts?.limits !== undefined ? { limits: opts.limits } : {}),
 		...(opts?.mode !== undefined ? { mode: opts.mode } : {}),
-		...(opts?.strictPrivacy !== undefined
-			? { strictPrivacy: opts.strictPrivacy }
-			: {}),
 		onDiagnostic: (diagnostic: Diagnostic): void => {
 			diagnostics.push(diagnostic);
 		},

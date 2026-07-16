@@ -9,8 +9,8 @@
  *    skip is what keeps it loop-free), and answers `{ type: "snapshot" }` requests
  *    with `memory.snapshot()` — the authoritative cross-tab answer BroadcastChannel
  *    gossip cannot give.
- *  - `connectSharedWorker(runtime, opts)` is the client half: same wire /
- *    loop-safety / exposure semantics as S22, plus `requestSnapshot()` which
+ *  - `connectSharedWorker(runtime, opts)` is the client half: the same wire /
+ *    loop-safety semantics S22 defines, plus `requestSnapshot()` which
  *    correlates request/response by id. There is NO timeout (initiative boundary);
  *    a caller wanting one wraps the promise with AbortSignal / Promise.race.
  *
@@ -21,8 +21,6 @@
  */
 import { type CompiledPattern, compilePattern, matchesPattern } from "../pattern.js";
 import type {
-	AttemptView,
-	Exposure,
 	IntentPattern,
 	Mark,
 	MarkOrigin,
@@ -123,13 +121,6 @@ function isSnapshotResponse(data: unknown): data is { readonly id: string; reado
 	);
 }
 
-/** Exposure of the mark's attempt: the view is authoritative; fall back to a begun mark's own field. */
-function exposureOf(mark: Mark, view: AttemptView | undefined): Exposure {
-	if (view !== undefined) return view.exposure;
-	if (mark.kind === "begun") return mark.exposure;
-	return "full";
-}
-
 function compileFilter(
 	patterns: readonly IntentPattern[] | undefined,
 ): readonly CompiledPattern[] | undefined {
@@ -140,14 +131,12 @@ function matchesFilter(compiled: readonly CompiledPattern[] | undefined, mark: M
 	return compiled === undefined || compiled.some((pattern) => matchesPattern(pattern, mark.intent));
 }
 
-/** Loop safety + exposure + send filter — the outgoing gate. */
+/** Loop safety + send filter — the outgoing gate. */
 function shouldSend(
 	mark: Mark,
-	view: AttemptView | undefined,
 	sendFilter: readonly CompiledPattern[] | undefined,
 ): boolean {
 	if (mark.origin !== undefined) return false; // foreign — never re-send (loop safety)
-	if (exposureOf(mark, view) === "local") return false; // never leaves the runtime
 	return matchesFilter(sendFilter, mark);
 }
 
@@ -286,8 +275,8 @@ export function connectSharedWorker(
 	// Forward-only live gossip: NO onAttach (see the BroadcastChannel transport).
 	const tap: Tap = {
 		id: TAP_ID,
-		onMark(mark: Mark, view: AttemptView | undefined): void {
-			if (!shouldSend(mark, view, sendFilter)) return;
+		onMark(mark: Mark): void {
+			if (!shouldSend(mark, sendFilter)) return;
 			port.postMessage(serializeMarks([stamp(mark, tab)]));
 		},
 	};

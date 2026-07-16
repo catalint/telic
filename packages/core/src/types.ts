@@ -48,13 +48,8 @@ export type MarkOrigin = {
 	readonly restored?: boolean;
 };
 
-/** Payload reach class — how far the recorded mark is allowed to travel. A write-time `transform` applies regardless. */
-export type Exposure = "full" | "local" | "private";
-
 /**
  * One immutable, JSON-serializable entry on the tape.
- * `payload`/`outcome`/`reason`/`data` are post-transform — nothing downstream
- * of the tape ever sees the raw values.
  */
 export type Mark =
 	| {
@@ -64,7 +59,6 @@ export type Mark =
 			readonly intent: IntentName;
 			readonly attempt: AttemptId;
 			readonly payload: unknown;
-			readonly exposure: Exposure;
 			readonly key?: string;
 			readonly parent?: AttemptId;
 			readonly retryOf?: AttemptId;
@@ -129,13 +123,12 @@ export type SettledPhase = Exclude<AttemptPhase, { phase: "active" }>;
 
 /**
  * Read-only serializable projection of an attempt — what memory, taps and
- * foreign consumers see. `payload` is post-transform.
+ * foreign consumers see.
  */
 export type AttemptView<P = unknown> = {
 	readonly id: AttemptId;
 	readonly intent: IntentName;
 	readonly payload: P;
-	readonly exposure: Exposure;
 	readonly key?: string;
 	readonly parent?: AttemptId;
 	readonly retryOf?: AttemptId;
@@ -200,10 +193,6 @@ export type IntentConfig<
 	readonly fulfilled?: FS;
 	/** Schema for the rejection reason. */
 	readonly rejected?: RS;
-	/** Write-time payload mapping: runs BEFORE the payload touches the tape, producing what the mark records. Purpose-neutral (redaction, downsampling, normalization, classification); the raw payload lives only on the local Attempt handle. Payload-only — outcomes are recorded as-is. */
-	readonly transform?: (payload: SchemaOut<PS, void>) => unknown;
-	/** "full" (default) | "local" (excluded from persistence/transports) | "private" (payload replaced everywhere). */
-	readonly exposure?: Exposure;
 	/** Free metadata for taps/agents ("funnel", "wizard"). */
 	readonly tags?: readonly string[];
 };
@@ -240,7 +229,7 @@ export type FulfillArgs<F> = F extends void ? [] : [outcome: F];
 export type Attempt<P = void, F = void, R = unknown> = {
 	readonly id: AttemptId;
 	readonly intent: IntentName;
-	/** The RAW (pre-transform) payload — owner's convenience; never leaves this handle. */
+	/** The payload as passed to begin() — owner's convenience; never leaves this handle. */
 	readonly payload: P;
 	/** Aborts when the attempt settles or abandons. Pass to fetch(): abandoning cancels I/O. */
 	readonly signal: AbortSignal;
@@ -376,7 +365,6 @@ export type Diagnostic =
 	| { readonly code: "late-configure" }
 	| { readonly code: "handler-replaced"; readonly intent: IntentName }
 	| { readonly code: "no-handler"; readonly intent: IntentName }
-	| { readonly code: "missing-exposure"; readonly intent: IntentName }
 	| { readonly code: "navigation-unavailable" };
 
 export type RuntimeLimits = {
@@ -396,8 +384,6 @@ export type RuntimeOptions = {
 	readonly limits?: RuntimeLimits;
 	/** "silent": full API, inert handles, empty memory (the SSR mode). Default: "record". */
 	readonly mode?: RuntimeMode;
-	/** Strict privacy: declaring a payload schema without an explicit exposure → diagnostic "missing-exposure" (a `transform` does not substitute for a reach declaration). Default false. */
-	readonly strictPrivacy?: boolean;
 	readonly onDiagnostic?: (diagnostic: Diagnostic) => void;
 };
 
@@ -423,7 +409,6 @@ export type Scope = {
 export type IntentDescriptor = {
 	readonly name: IntentName;
 	readonly tags: readonly string[];
-	readonly exposure: Exposure;
 	readonly hasPayloadSchema: boolean;
 	/** True while a mediation handler is currently registered for this name (live at describe() time). */
 	readonly handled: boolean;

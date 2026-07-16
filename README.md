@@ -106,7 +106,7 @@ One declaration simultaneously yields:
 | `…/taps/user-timing` · `…/taps/otel` | marks in the DevTools Performance panel / attempts as OTel spans |
 | `…/mediate` | `handle` / `dispatch` / `command` stubs, parked dispatch |
 | `…/flow` | the saga coordinator-as-a-value |
-| `…/persist` · `…/wire` | tape across reloads (exposure-aware) + the validated wire format |
+| `…/persist` · `…/wire` | tape across reloads + the validated wire format |
 | `…/transports/broadcast` · `…/post-message` · `…/shared-worker` | cross-tab gossip, cross-app bridging, authoritative cross-tab hub |
 | `…/adapters/tanstack-query` · `…/adapters/xstate` | provenance links from the machinery you already run |
 | `…/testing` · `…/devtools` · `…/agent` | deterministic test runtimes, a Trusted-Types-safe overlay, `window.__INTENT_MEMORY__` |

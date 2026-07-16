@@ -323,3 +323,39 @@ rename with no deprecated alias. Rejected: `recordAs`/`project` (over-claim mark
 or projection-wide when the seam is payload-only); keeping `redact` (purpose-laden,
 sustains the privacy-layer conflation D28 unwinds); a `redact` alias (debt for no
 adopter). SPEC: S1.5 rewritten, S2.1 reworded; type `IntentConfig.transform`.
+
+**D30. Privacy leaves telic's realm entirely; `exposure`, `transform`, and the
+`strictPrivacy`/`missing-exposure` diagnostic are removed (2026-07-16).** D28
+drew the data boundary and D29 renamed `redact`→`transform` to unwind the
+"privacy layer" framing; carrying that reasoning to its end, the whole
+payload-egress surface was cut. Removed: the `exposure` reach class
+(`full`/`local`/`private`) and its `"[private]"` payload mask; the `transform`
+write-time payload mapping (this SUPERSEDES the rename half of D29 — the field no
+longer exists in any form); the `strictPrivacy` runtime option and its
+`missing-exposure` diagnostic (S1.5, now a tombstone); and every egress filter
+those drove — snapshot exclusion (S6.7), persistence's local-skip (S18.2), and
+the transports' local/private gates (S22–S24). telic core now records a mark and
+holds zero opinion about where it goes; taps/persistence/transports forward
+everything, and scoping is the caller's `send`/pattern filter at wiring time.
+Why: the boundary D28 states already says telic does not author data policy, and
+an intent-level reach enum was telic authoring exactly that. Its two legitimate
+uses both belong elsewhere — privacy metadata is the caller's realm (AP7,
+"classifications only on the tape"), and noise/correctness scoping is expressible
+where a transport or storage tap is wired. Keeping the enum also carried real
+cost: two open leaks — `exposure` recoverable only from `begun` marks (#5),
+`flow()` upgrading a `local` child's reach (#8) — existed ONLY because the enum
+existed; both dissolve with it, and both DESIGN "Risks we carry knowingly" rows
+are removed accordingly. Cost accepted: attaching a broadcast/persistence tap now
+forwards ALL marks by default; a caller wanting a subset scopes it at attach time
+(`send`/`accept` patterns), the same seam that already existed. A per-mark
+`filter(mark) => boolean` egress hook on the taps/transports was considered and
+DEFERRED (YAGNI): the pattern filters cover the known need, and adding a second
+scoping mechanism before an adopter asks for it would re-introduce the
+telic-authored policy surface this decision exists to remove — if a real case
+appears, that hook is the sanctioned escape hatch. BREAKING (removes public
+config fields, a runtime option, a diagnostic, and the `exposure` wire field — a
+tolerant reader ignores a stale `exposure` on old marks, so no migration);
+adoption is ~zero, so a clean cut. SPEC: S1.5/S7.4 tombstoned,
+S2.1/S6.7/S12.1/S14.2/S18.2/S22–S24 excised; types `Exposure`,
+`IntentConfig.transform`/`.exposure`, `RuntimeOptions.strictPrivacy`, and the
+`missing-exposure` diagnostic deleted.

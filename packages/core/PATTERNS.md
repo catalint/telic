@@ -113,9 +113,9 @@ tells you exactly which steps committed.
 
 `window.__INTENT_MEMORY__.inProgress()` answers "what is the user mid-way
 through"; `describe()` answers "what can be intended here". Pair with WebMCP
-tools (what an agent can *do*) for the full picture. Payloads are already
-transformed at write time — the surface is a read-only local reader, but keep
-`exposure` and any `transform` honest upstream for anything sensitive.
+tools (what an agent can *do*) for the full picture. The surface is a read-only
+local reader — everything on the tape is visible here, so keep sensitive values
+off the payload upstream (AP7).
 
 ### P10. Handler availability in a code-split world
 
@@ -238,19 +238,19 @@ attempts. Exception that is NOT a bug: begin-then-redirect where abandonment
 is the *true semantic* (OAuth redirect — the outcome genuinely resolves
 elsewhere).
 
-### AP7. Putting secrets on the tape and trusting a `transform` to scrub them
+### AP7. Putting secrets on the tape and trusting something downstream to scrub them
 
 ```ts
 // ❌ raw PII into the payload, hoping a tap filters it
 login.begin({ email: user.email })
 ```
 
-Failure: a write-time `transform` (with `exposure`) can shrink what's recorded,
-but the honest fix is upstream: design payloads to carry classifications, not
-identities (`{ method: "email" }`, not the address). The identity boundary is
-yours, not telic's (see DESIGN, "The data boundary") — everything downstream
-(breadcrumbs, storage, agents, transports) inherits whatever you let onto the
-tape.
+Failure: telic records the payload verbatim and forwards it everywhere — there is
+no scrubbing seam to lean on. The honest fix is upstream: design payloads to
+carry classifications, not identities (`{ method: "email" }`, not the address).
+The identity boundary is yours, not telic's (see DESIGN, "The data boundary") —
+everything downstream (breadcrumbs, storage, agents, transports) inherits
+whatever you let onto the tape.
 
 ### AP8. Blanket abandon-on-navigation for in-app flows
 
@@ -304,7 +304,7 @@ return correlation breadcrumbs in a response header (JSON array of
 parses the header, builds marks via the wire format, and `runtime.ingest()`s
 them with `origin: { app: "api" }` — the server's steps appear inline in the
 client timeline, devtools, and the agent surface. Keep it dev-only (header
-size, exposure discipline: the server must apply the same
+size; the server must apply the same
 identities-never-on-the-tape rule as AP7).
 
 ### AP9. Porting telic to the server

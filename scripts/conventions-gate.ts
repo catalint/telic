@@ -6,7 +6,7 @@
  * parity check. Exit 0 = clean, 1 = violations (printed file:line rule).
  *
  * Only CLEANLY-GREPPABLE classes live here. Semantic rules that need judgement
- * (prototype-key lookups — D27, exposure recoverability, once-key ordering)
+ * (prototype-key lookups — D27, once-key ordering)
  * are NOT greppable without false positives; they live in
  * .github/copilot-instructions.md and the SPEC instead. Adding a noisy grep for
  * them would train maintainers to ignore this gate — the exact failure mode

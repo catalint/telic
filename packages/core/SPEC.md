@@ -17,23 +17,17 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
 4. A name whose post-dot segment starts with `set`, `update`, `toggle`, or
    `change` (case-insensitive) → diagnostic `setter-like-name` (once per name).
    Recording proceeds normally — it's a nudge, not a gate.
-5. Under `strictPrivacy: true` (RuntimeOptions): declaring an intent with a
-   payload schema but NO explicit `exposure` → diagnostic `missing-exposure`
-   (once per name). `exposure` is the reach declaration telic honors; a
-   `transform` is a payload mapping, NOT a reach claim, so its presence does
-   NOT suppress this diagnostic (narrowed in D29 — it formerly also required
-   NO `transform`). Same diagnostics-as-linters philosophy as S1.4: reach that
-   depends on authors remembering it will leak; the nudge fires at declaration
-   time. Recording proceeds normally.
+5. *(Removed in D30.)* The `strictPrivacy` option and its `missing-exposure`
+   diagnostic were removed together with the payload-egress machinery — telic
+   no longer models where a mark is allowed to travel. Clause number retained
+   for stability.
 
 ## S2. begin()
 
-1. Returns an `Attempt`. Emits a `begun` mark carrying the RECORDED payload
-   (`config.transform` applied when present; raw payload only on the handle).
-   `transform` is a purpose-neutral payload→mark mapping (redaction is one use;
-   downsampling/normalization/classification are others) and is payload-only —
-   outcomes are recorded as-is. `exposure: "private"` intents record payload
-   `"[private]"` regardless of `transform`.
+1. Returns an `Attempt`. Emits a `begun` mark carrying the payload as passed to
+   `begin()` — telic records it verbatim and holds no opinion about where the
+   mark may travel (D30). Keeping sensitive values off the payload is the
+   caller's responsibility (see PATTERNS.md AP7).
 2. Payload validation: if a payload schema exists, validate synchronously via
    `schema["~standard"].validate`. On issues → diagnostic `invalid-payload`;
    the begin STILL records (record-first: observability must not break the
@@ -130,7 +124,7 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
    diagnostic `listener-error` (the projection skips that mark).
 7. `snapshot()`: `{ at: now(), seq: current, active: AttemptView[], recent:
    Mark[] }` — deep-copied (structuredClone or equivalent) so callers cannot
-   mutate runtime state; `exposure: "local"` attempts/marks are EXCLUDED.
+   mutate runtime state.
 8. All views returned by memory are frozen.
 
 ## S7. Taps
@@ -141,9 +135,8 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
    attach order, before listeners (S5.5).
 3. Tap exceptions are caught → diagnostic `tap-error` (with tap id); never
    propagate.
-4. `exposure: "local"` marks ARE delivered to taps (taps are local); the
-   exclusion (S6.7) applies to snapshots — transports must use snapshots or
-   check `exposure` themselves.
+4. *(Removed in D30.)* Taps receive every mark; there is no longer a `local`
+   exposure class to exclude. Clause number retained for stability.
 
 ## S8. Patterns (src/pattern.ts)
 
@@ -221,9 +214,9 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
 ## S12. describe() (Runtime)
 
 1. `runtime.describe()` returns one `IntentDescriptor` per DISTINCT declared
-   intent name, in first-declaration order: `{ name, tags, exposure,
-   hasPayloadSchema }`. Re-declarations (S1.3) do not duplicate entries; the
-   FIRST declaration's config wins for the descriptor.
+   intent name, in first-declaration order: `{ name, tags, hasPayloadSchema }`.
+   Re-declarations (S1.3) do not duplicate entries; the FIRST declaration's
+   config wins for the descriptor.
 2. The returned array and its entries are frozen.
 3. Silent runtimes still register declarations (describe() works on the server
    — declaration is side-effect-free; only recording is silenced).
@@ -296,9 +289,8 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
    globalThis, default key: "__INTENT_MEMORY__"); returns an uninstall fn.
 2. Facade: `{ version: 1, snapshot(), marks(sinceSeq?), inProgress(),
    describe() }` — pure delegations to the runtime; everything returned is
-   already frozen/transformed by core semantics (snapshot excludes
-   exposure:"local" per S6.7; marks()/inProgress() delegate to memory and are
-   NOT additionally filtered — the facade is a local reader).
+   already frozen by core semantics. The facade adds no filtering of its own —
+   it is a local reader.
 3. Installing over an existing property: overwrite silently only when the
    existing value is a previous telic facade (`version` present); otherwise
    leave the property alone and return a no-op uninstaller.
@@ -423,9 +415,9 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    consent hook, checked per write AND at restore), `maxMarks?` (default 200),
    `resume?: readonly IntentPattern[]`.
 2. WRITE path: a tap persisting the rolling tail of marks (≤ maxMarks) after
-   each mark, serialized via the wire format (S19). Exposure filtering is
-   ABSOLUTE: marks of intents with exposure "local" are never written;
-   "private" marks are written with their payload placeholder as-is. Storage
+   each mark, serialized via the wire format (S19). All marks are written —
+   telic applies no egress filtering (D30); scoping what a storage tap persists
+   is the caller's job at wiring time (`send`/pattern filters). Storage
    write failures (quota, disabled) are swallowed to a diagnostic
    (`tap-error`, tap id "persist") — persistence must never break the app.
 3. RESTORE path (runs once inside connectStorage, before the tap attaches):
@@ -500,12 +492,11 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    ONCE PER NAME per runtime (not per re-declaration) — hot-module-reload
    re-evaluation must not train developers to ignore diagnostics. First
    declaration's config still wins (S12.1 unchanged): the handle RETURNED by a
-   re-declaration records with the FIRST declaration's config (exposure, transform,
-   tags, schemas), NOT the freshly-passed one — so `describe()` (which reads the
-   frozen first meta) and the live handle can never diverge (D26). The
-   `missing-exposure` diagnostic (S1.5) is likewise evaluated against the first
-   (effective) config. A second call with a different config only shapes the
-   caller's static type; runtime behavior is unchanged.
+   re-declaration is built from the FIRST declaration's config (tags, schemas),
+   NOT the freshly-passed one — so `describe()` (which reads the frozen first
+   meta) and the live handle can never diverge (D26). A second call with a
+   different config only shapes the caller's static type; runtime behavior is
+   unchanged.
 
 ## S22. Cross-tab transport — BroadcastChannel (src/transports/broadcast.ts)
 
@@ -518,7 +509,8 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    absent → inert + one `tap-error`-family diagnostic).
 2. Outgoing: a tap serializing matching LOCAL marks (never marks that already
    carry a foreign `origin` — loop safety) via the wire format, stamped
-   `origin.tab`. Exposure rules: "local" never sent; "private" sent as-is.
+   `origin.tab`. Which marks are forwarded is the caller's `send` filter — telic
+   applies no egress policy of its own (D30).
 3. Incoming: wire-parse (tolerant), filter by `accept`, `runtime.ingest()`.
 4. Disconnect closes the channel and detaches the tap.
 
@@ -531,7 +523,7 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    (REQUIRED — mandatory allow-listing), `listen?` (structural event source
    for incoming message events; default window, feature-detected), plus
    send/accept pattern filters and `app?` origin stamp as in S22.
-2. Same wire/loop-safety/exposure semantics as S22; incoming events are
+2. Same wire/loop-safety semantics as S22; incoming events are
    dropped unless `accept(event.origin)` passes.
 
 ## S24. Cross-tab hub — SharedWorker (src/transports/shared-worker.ts)
@@ -547,7 +539,7 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    (structural MessagePort) or `workerFactory?` (default
    `new SharedWorker(url).port`, feature-detected → inert + diagnostic when
    absent), send/accept patterns, `tab?` stamp. Outgoing/incoming semantics
-   as S22 (wire + loop safety + exposure).
+   as S22 (wire + loop safety).
 3. No timers, no reconnection logic (initiative boundary): a dead port is the
    app's problem to reconnect.
 

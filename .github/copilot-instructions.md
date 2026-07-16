@@ -28,10 +28,10 @@ clause-numbered specs (`packages/*/SPEC.md`); design boundaries live in
 5. **Privacy rules on the tape:** payloads must never carry raw identities
    (emails, phone numbers, names) — classifications only (see PATTERNS.md AP7).
    The identity boundary is the CALLER's, not telic's (see DESIGN "The data
-   boundary"): a write-time `transform` (formerly `redact`) or `exposure`
-   shrinks what's recorded but is no substitute for keeping PII off the payload.
-   Flag anything that could put PII onto marks, into storage, transports, or the
-   agent surface.
+   boundary"): telic records payloads verbatim and forwards them everywhere — it
+   has no `exposure`/reach class or payload scrubbing (removed in D30), so
+   keeping PII off the payload is the only line of defense. Flag anything that
+   could put PII onto marks, into storage, transports, or the agent surface.
 6. **SSR/environment safety:** no `window`/`document`/`navigation`/storage
    access at module scope, ever. Environment must be feature-detected at call
    time and injectable for tests.
@@ -72,21 +72,14 @@ past defect; treat a new instance as a likely bug, not a nit.
    `Object.hasOwn(obj, key) ? obj[key] : undefined`, or build the map as
    `Object.create(null)` / a `Map`. (Fixed sites: `adapters/xstate`, `lint/rules`,
    `flow`.)
-2. **Exposure recoverability (S6.7/S18.2).** `exposure` lives on `begun` marks
-   ONLY. Any code deciding a mark's exposure after the attempt's live record may
-   be gone (LRU-evicted) must NOT default to `"full"` — that leaks `local` data
-   to snapshots/persistence/transports. Also watch aggregation that upgrades a
-   `local` child's value into a non-local parent (e.g. `flow()` embedding a local
-   step's outcome in the flow parent's fulfilled mark). See the open exposure
-   issues before touching persist / transports / flow.
-3. **Dedup/once ordering and unboundedness (taps).** Record/consume a dedup or
+2. **Dedup/once ordering and unboundedness (taps).** Record/consume a dedup or
    once-key BEFORE the side effect that can throw — otherwise a throwing sink
    re-fires the rule (double-count). A flush path (e.g. `recheck`) must be atomic:
    never empty a buffer before firing, or a mid-flush throw drops the remainder.
    Any per-attempt dedup set must be bounded (attempt ids never recycle).
-4. **CI-unstable output.** Diagnostic/CLI message BODIES must not embed absolute
+3. **CI-unstable output.** Diagnostic/CLI message BODIES must not embed absolute
    filesystem paths — only the relativized `file` field is checkout-stable.
-5. **Keyed/parked idempotency.** A keyed dispatch that dedupes to a single
+4. **Keyed/parked idempotency.** A keyed dispatch that dedupes to a single
    attempt must run its handler at most once — park queues must dedupe by attempt
    identity, not enqueue one entry per call.
 

@@ -3,15 +3,14 @@
  *
  * The serialization boundary for persistence (S18) and future transports. Core
  * never imports this module; this module never imports core. `parseMark` /
- * `parseWirePayload` are tolerant readers — post-transform payloads
+ * `parseWirePayload` are tolerant readers — recorded payloads
  * (`payload`/`outcome`/`reason`/`data`) pass through as `unknown`; structured
- * fields (`kind`, `exposure`, `abandon`, `ref`, `origin`) are validated so the
+ * fields (`kind`, `abandon`, `ref`, `origin`) are validated so the
  * result is a REAL, branded `Mark`.
  */
 import type {
 	AbandonReason,
 	AttemptId,
-	Exposure,
 	IntentName,
 	Mark,
 	MarkOrigin,
@@ -52,14 +51,6 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalAttemptId(value: unknown): AttemptId | undefined {
 	return typeof value === "string" ? asAttemptId(value) : undefined;
-}
-
-/** Absent → "full" (tolerant default); present-but-unknown → undefined (reject). */
-function parseExposure(value: unknown): Exposure | undefined {
-	if (value === undefined) return "full";
-	if (value === "full" || value === "local" || value === "private")
-		return value;
-	return undefined;
 }
 
 function parseOrigin(value: unknown): MarkOrigin | undefined {
@@ -157,8 +148,6 @@ export function parseMark(value: unknown): Mark | undefined {
 
 	switch (kind) {
 		case "begun": {
-			const exposure = parseExposure(value.exposure);
-			if (exposure === undefined) return undefined;
 			const key = optionalString(value.key);
 			const parent = optionalAttemptId(value.parent);
 			const retryOf = optionalAttemptId(value.retryOf);
@@ -169,7 +158,6 @@ export function parseMark(value: unknown): Mark | undefined {
 				intent,
 				attempt,
 				payload: value.payload,
-				exposure,
 				...(key !== undefined ? { key } : {}),
 				...(parent !== undefined ? { parent } : {}),
 				...(retryOf !== undefined ? { retryOf } : {}),

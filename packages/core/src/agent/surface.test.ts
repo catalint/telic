@@ -87,22 +87,18 @@ describe("S14.1/S14.2: facade shape", () => {
 // ---------------------------------------------------------------------------
 
 describe("S14.2: delegation correctness", () => {
-	it('S14.2/S6.7: given a public and a local-exposure intent, when snapshot() is called on the facade, then it delegates to memory.snapshot() and excludes exposure:"local"', () => {
+	it("S14.2: given a declared intent, when snapshot() is called on the facade, then it delegates to memory.snapshot()", () => {
 		const rt = makeRuntime();
 		const target = {};
 		exposeAgentSurface(rt, { target });
 		const facade = readFacade(target);
 
 		const publicFlow = rt.intent("agent.publicThing");
-		const localFlow = rt.intent("agent.localThing", { exposure: "local" });
 		publicFlow.begin();
-		const localAttempt = localFlow.begin();
-		localAttempt.fulfill();
 
 		const snap = facade.snapshot();
 		expect(snap).toEqual(rt.memory.snapshot());
 		expect(snap.active.some((view) => view.intent === "agent.publicThing")).toBe(true);
-		expect(snap.recent.some((mark) => mark.intent === "agent.localThing")).toBe(false);
 	});
 
 	it("S14.2/S6.5: given several begun marks, when marks(sinceSeq) is called on the facade, then it delegates to memory.marks({ sinceSeq }) with sinceSeq EXCLUSIVE", () => {
@@ -155,7 +151,7 @@ describe("S14.2: delegation correctness", () => {
 		const facade = readFacade(target);
 
 		rt.intent("agent.one", { tags: ["funnel"] });
-		rt.intent("agent.two", { exposure: "private" });
+		rt.intent("agent.two", { tags: ["ops"] });
 		rt.intent("agent.one"); // re-declaration must not duplicate the descriptor (S12.1)
 
 		const described = facade.describe();

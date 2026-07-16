@@ -193,3 +193,10 @@ testing subpath (S21); analytics-tap trace hook for CI-assertable migration
 parity (S17.7); duplicate-intent fires once per name (S1.3 revised — HMR must
 not train diagnostic-blindness). Release automation: publish-on-tag workflow
 with npm trusted publishing (OIDC provenance).
+
+**D21. Release automation approved (owner, 2026-07-16).** Tag-triggered
+publish workflow (OIDC trusted publishing with provenance) for @telic/core
+and @telic/react, with version-exists guards so manual publishes and re-runs
+stay green. First publish of any NEW package remains manual (npm requires the
+package to exist before a trusted publisher can be configured). Verification
+(typecheck/test/size) runs in the same job before any publish.

@@ -1,7 +1,9 @@
 name: Release
-# Publishes @telic/core to npm when a v* tag is pushed.
-# Uses npm trusted publishing (OIDC provenance) — configure once on npmjs.com:
+# Publishes packages to npm when a v* tag is pushed. Owner-approved automation (DECISIONS D21).
+# Uses npm trusted publishing (OIDC provenance) — configure once per package on npmjs.com:
 # package settings → Trusted publisher → GitHub Actions → catalint/telic, workflow release.yml.
+# NOTE: a package's FIRST publish cannot use trusted publishing (the package must exist) —
+# first publishes are manual; the version-exists guards below make re-runs green.
 on:
   push:
     tags:
@@ -23,6 +25,21 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       - run: bun run size
-      - name: Publish
+      - name: Publish @telic/core
         working-directory: packages/core
-        run: npm publish --provenance --access public
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "@telic/core@$VERSION" version > /dev/null 2>&1; then
+            echo "@telic/core@$VERSION already published — skipping"
+          else
+            npm publish --provenance --access public
+          fi
+      - name: Publish @telic/react
+        working-directory: packages/react
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "@telic/react@$VERSION" version > /dev/null 2>&1; then
+            echo "@telic/react@$VERSION already published — skipping"
+          else
+            npm publish --provenance --access public
+          fi

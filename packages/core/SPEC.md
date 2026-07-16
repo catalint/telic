@@ -1,0 +1,411 @@
+# @telic/core — behavioral specification (Phase 0)
+
+Normative spec for `src/core.ts` + `src/pattern.ts`. The type contract lives in
+`src/types.ts` (authoritative for signatures). Tests are written FROM THIS FILE,
+not from the implementation. Clause numbers are stable — reference them in test
+descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
+
+## S1. Declarations
+
+1. `intent(name, config?)` is side-effect-free apart from registering the
+   declaration with the runtime for `describe()`/diagnostics. SSR-safe.
+2. Names must match `<scope>.<rest>` (at least one dot). The type system
+   enforces the shape; the runtime does NOT throw on violations.
+3. Declaring the same name twice on one runtime → diagnostic
+   `duplicate-intent`; the second declaration still works (returns a handle
+   bound to the same name).
+4. A name whose post-dot segment starts with `set`, `update`, `toggle`, or
+   `change` (case-insensitive) → diagnostic `setter-like-name` (once per name).
+   Recording proceeds normally — it's a nudge, not a gate.
+5. Under `strictPrivacy: true` (RuntimeOptions): declaring an intent with a
+   payload schema but NO explicit `exposure` and NO `redact` → diagnostic
+   `missing-exposure` (once per name). Same diagnostics-as-linters philosophy
+   as S1.4: redaction that depends on authors remembering it will leak;
+   the nudge fires at declaration time. Recording proceeds normally.
+
+## S2. begin()
+
+1. Returns an `Attempt`. Emits a `begun` mark carrying the REDACTED payload
+   (`config.redact` applied when present; raw payload only on the handle).
+   `exposure: "private"` intents record payload `"[private]"` regardless of
+   redact.
+2. Payload validation: if a payload schema exists, validate synchronously via
+   `schema["~standard"].validate`. On issues → diagnostic `invalid-payload`;
+   the begin STILL records (record-first: observability must not break the
+   app). If validate returns a Promise → diagnostic `async-schema`, skip
+   validation, record.
+3. Ambient parent: inside `within(a, fn)`, a `begin()` without explicit
+   `opts.parent` stamps `parent: a.id`.
+4. Keyed conflicts — key = `intent name + opts.key`:
+   - default `onConflict` is `"concurrent"` without a key, `"dedupe"` with one;
+   - `"dedupe"`: if an ACTIVE attempt exists for the key, return THE SAME
+     `Attempt` handle (no new mark);
+   - `"supersede"`: abandon the existing active keyed attempt
+     (`{ why: "superseded", by: <newId> }`), then begin the new one;
+   - `"concurrent"`: always a fresh attempt.
+5. `opts.retryOf` stamps the begun mark.
+6. `opts.abandonWhen` (AbortSignal): when it aborts (or is already aborted),
+   the attempt abandons with `{ why: "signal" }`.
+7. In `mode: "silent"`: `begin()` returns an inert handle (all methods no-op,
+   `phase()` returns active-since-0, `signal` never aborts, `settled` never
+   resolves); nothing is recorded.
+
+## S3. Attempt lifecycle
+
+1. Phases: `active` → exactly one of `fulfilled` | `rejected` | `abandoned`.
+2. `fulfill(outcome?)` emits `fulfilled`; outcome validated like S2.2
+   (diagnostic `invalid-outcome`, still records).
+3. `reject(reason)` emits `rejected`.
+4. Settling is FIRST-WRITE-WINS: any second settle call (fulfill/reject/
+   abandon after terminal) is ignored, emits NO mark, and produces diagnostic
+   `double-settle` with the ignored phase. Never throws.
+5. `abandon(reason?)` defaults to `{ why: "user" }`.
+6. `note(data)` emits `noted` while active; after settle it is ignored
+   (no mark, no diagnostic — notes race benignly with settlement).
+7. `link(ref)` emits `linked`; allowed while active AND after settle
+   (adapters may report trailing state activity).
+8. `attempt.signal`: lazily created; aborts when the attempt settles or
+   abandons (abort reason = the terminal phase string). Accessing `signal`
+   after settle returns an already-aborted signal.
+9. `attempt.settled`: resolves with the terminal `AttemptPhase` on first
+   settle; never rejects. Accessing after settle resolves immediately.
+10. `wrap(fn)`: returns a function that re-enters this attempt's ambient scope
+    (as `within`) for each invocation, then restores the previous stack.
+11. `Symbol.dispose`: abandon-if-unsettled with `{ why: "dispose" }`; no-op if
+    settled.
+12. `intent.run(payload, fn)`: begins, calls `fn(attempt)` capturing sync
+    throws as rejections (Promise.try semantics); on resolve `{ ok: true }` →
+    fulfill (with `result.data` as outcome when a fulfilled schema exists and
+    `data` is present, else void); `{ ok: false }` → reject (with
+    `result.error` when present, else the result); on throw/reject → reject
+    with the thrown value, then RE-THROW to the caller. Already-settled
+    attempts (e.g. fn fulfilled manually) follow S3.4.
+
+## S4. Tape
+
+1. Marks get `seq` from a monotonic counter starting at 1 (branded `Seq`) and
+   `at` from the injected clock.
+2. Marks are frozen (`Object.freeze`) before emission.
+3. Ring buffer: at most `limits.marks` (default 500) marks retained; oldest
+   evicted first. Eviction does not affect attempt phase tracking.
+4. Attempt index: ACTIVE attempts are always retained (never evicted).
+   Settled attempts go to an LRU of `limits.settledAttempts` (default 100).
+
+## S5. Subscriptions — on()
+
+1. `on(pattern, listener, opts?)` returns an `Unsubscribe` (callable and
+   disposable). Duplicate unsubscribe calls are safe.
+2. Pattern semantics (see S8): exact, `scope.*`, `*`.
+3. `opts.kinds` filters by mark kind.
+4. `opts.replay: true`: synchronously delivers all RETAINED matching marks
+   (in seq order, kinds-filtered) before `on()` returns, each with the current
+   `AttemptView` for its attempt (or undefined if evicted).
+5. Listener exceptions are caught → diagnostic `listener-error`; other
+   listeners and taps still run. Delivery order: taps first (attach order),
+   then listeners (subscribe order). A listener subscribing/unsubscribing
+   during delivery takes effect from the NEXT mark.
+6. The `IntentEvent.attempt` view reflects the attempt state AFTER the mark
+   (e.g. a `fulfilled` mark's view has `phase: "fulfilled"`).
+
+## S6. Memory
+
+1. `last(pattern)`: the matching attempt with the highest begun seq (active or
+   settled, retained only).
+2. `has(pattern, { phase?, withinMs? })`: any retained matching attempt;
+   `phase` filters terminal/active phase; `withinMs` compares against the
+   attempt's LAST activity (begun or settle time) relative to `now()`.
+3. `inProgress(scopePattern?)`: active attempts, oldest-begun first.
+4. `attempts(pattern, { limit? })`: retained matching attempts, most recently
+   begun first.
+5. `marks({ pattern?, kinds?, sinceSeq? })`: retained marks in seq order;
+   `sinceSeq` is exclusive.
+6. `project(projection)`: folds `init()` over all retained marks immediately,
+   then over each live mark; `read()` returns current state; `subscribe(fn)`
+   fires after each fold; `dispose()` detaches. Reducer exceptions →
+   diagnostic `listener-error` (the projection skips that mark).
+7. `snapshot()`: `{ at: now(), seq: current, active: AttemptView[], recent:
+   Mark[] }` — deep-copied (structuredClone or equivalent) so callers cannot
+   mutate runtime state; `exposure: "local"` attempts/marks are EXCLUDED.
+8. All views returned by memory are frozen.
+
+## S7. Taps
+
+1. `runtime.tap(tap)` attaches; returns `Unsubscribe`. If `tap.onAttach`
+   exists it is called once, synchronously, with the retained tape.
+2. Every subsequent mark calls `tap.onMark(mark, view)` synchronously, in
+   attach order, before listeners (S5.5).
+3. Tap exceptions are caught → diagnostic `tap-error` (with tap id); never
+   propagate.
+4. `exposure: "local"` marks ARE delivered to taps (taps are local); the
+   exclusion (S6.7) applies to snapshots — transports must use snapshots or
+   check `exposure` themselves.
+
+## S8. Patterns (src/pattern.ts)
+
+1. `"a.b"` matches only `"a.b"`. `"a.*"` matches every name whose first
+   segment is `a` (any depth after the dot). `"*"` matches everything.
+2. `compilePattern(pattern)` → `CompiledPattern`; `matchesPattern(compiled,
+   name)` → boolean; `bucketOf(pattern)` → first segment, or null for `"*"`
+   (listener bucketing); `scopeOf(name)` → first segment.
+3. Matching is case-sensitive, no regex, O(1) per check after compile.
+
+## S9. within / current
+
+1. `within(attempt, fn)` pushes for the SYNCHRONOUS duration of `fn` (always
+   restored via finally, exceptions propagate). Re-entrant (stack).
+2. `current()` returns the AttemptView of the top of the stack, or undefined.
+3. Ambient context does NOT survive `await` — documented; `wrap()` is the
+   escape hatch. No AsyncContext polyfill.
+
+## S10. Runtime & default runtime
+
+1. `createRuntime(opts?)` — everything injectable: `now` (default Date.now),
+   `id` (default crypto.randomUUID, falling back to a counter when
+   crypto.randomUUID is absent), limits, mode, onDiagnostic.
+2. Diagnostics NEVER throw; without `onDiagnostic` they are dropped silently
+   in production-like use (no console.* in the library).
+3. `ingest(marks)`: appends foreign marks to the tape (preserving their
+   origin), updates/creates attempt records from them, re-seqs them locally
+   (local seq order is the tape's total order), and delivers to taps/listeners.
+   Marks whose `origin` is set are otherwise treated identically.
+4. Module-level API (`intent`, `on`, `memory`, top-level `scope`) binds to THE
+   DEFAULT RUNTIME: lazily created on first use — `mode: "silent"` when
+   `typeof document === "undefined"` (a server module singleton spans
+   requests; recording there would interleave users), else `mode: "record"`.
+   Module-level `intent()` handles are LATE-BOUND: the declaration is stored
+   in a module-level registry, and every handle method resolves the CURRENT
+   default runtime at call time. Module-level `on()` subscriptions likewise
+   survive a configure: they re-attach to the new runtime (replay does NOT
+   re-fire). ES-module evaluation order must not matter — declaring intents
+   or subscribing before `configureDefaultRuntime()` runs is the normal case,
+   not an error.
+5. `configureDefaultRuntime(opts)`: replaces the default runtime. All
+   module-level declarations re-register onto the new runtime eagerly (so
+   `describe()` is complete before any recording), and previously-obtained
+   module-level handles keep working — their next call records on the NEW
+   runtime. Handles from explicit `createRuntime()` runtimes are unaffected
+   (they stay bound to their runtime). Called after the default runtime has
+   already RECORDED (seq > 0) → diagnostic `late-configure` and the fresh
+   runtime still replaces (empty tape).
+7. Regression guard (the orphaned-runtime bug): module-level `intent()`
+   called during module evaluation, followed by `configureDefaultRuntime()`,
+   followed by `handle.begin()` — the mark MUST land on the configured
+   runtime (visible to its taps, memory, and describe()). An attempt begun
+   BEFORE the configure settles on the runtime that recorded its begin (the
+   old one); this is the only sanctioned cross-runtime edge and is
+   documented, not diagnosed.
+6. `connectBrowserLifecycle(runtime, env?)`: wires auto-abandonment.
+   - `env` is injectable for tests: `{ addEventListener, navigation? }`
+     (structural; defaults to globalThis when present).
+   - On `pagehide`: abandon ALL active attempts (`{ why: "navigation" }`).
+   - On Navigation API `navigate` success (soft nav): abandon ONLY attempts
+     whose `boundTo` pattern does NOT match the new URL. Attempts without
+     `boundTo` are NOT abandoned by soft navigation (SPA wizards navigate
+     between their own steps).
+   - Returns a disconnect function. Feature-detects; never throws when the
+     Navigation API is absent — but absence is NOT silent: connecting a
+     runtime whose environment lacks the Navigation API fires diagnostic
+     `navigation-unavailable` (once per connect), because `boundTo`
+     auto-abandonment degrading silently would be an honesty violation.
+     Alternative navigation sources (framework routers) plug in via the
+     injectable `env` — the adapter contract is: an object whose `navigation`
+     property is EventTarget-shaped with `currentEntry.url`.
+   - The default runtime auto-connects lazily in the browser; explicit
+     runtimes do not.
+
+## S12. describe() (Runtime)
+
+1. `runtime.describe()` returns one `IntentDescriptor` per DISTINCT declared
+   intent name, in first-declaration order: `{ name, tags, exposure,
+   hasPayloadSchema }`. Re-declarations (S1.3) do not duplicate entries; the
+   FIRST declaration's config wins for the descriptor.
+2. The returned array and its entries are frozen.
+3. Silent runtimes still register declarations (describe() works on the server
+   — declaration is side-effect-free; only recording is silenced).
+
+## S13. Taps modules (src/taps/*)
+
+1. `taps/console.ts` — `createConsoleTap(opts?: { log?: (line: string, mark:
+   Mark) => void })`: one human-readable line per mark
+   (`kind intent#attemptShort …`); default log falls back to
+   `globalThis.console?.debug` and no-ops when absent. Dev tool; the ONLY
+   module allowed to touch console, and only as an injectable default.
+2. `taps/breadcrumbs.ts` — `createBreadcrumbTap(opts: { addBreadcrumb: (b:
+   BreadcrumbLike) => void })` — the vendor-neutral primary (any
+   `addBreadcrumb`-shaped sink: Sentry, Rollbar telemetry, …).
+   `taps/sentry.ts` remains as a preset re-export (`createSentryBreadcrumbTap`
+   = alias) for discoverability; identical semantics: every mark → breadcrumb `{ category: "intent",
+   message: "<kind> <intent>", level: "error" for rejected / "warning" for
+   abandoned / "info" otherwise, data: { attempt, seq, plus kind-specific
+   payload/outcome/reason/abandon fields }, timestamp: mark.at / 1000 }`.
+   Structural injection only — no @sentry import. Also exports
+   `intentContext(memory)`: `{ inProgress: AttemptView[], recent: Mark[]
+   (last 10) }` for beforeSend enrichment.
+3. `taps/user-timing.ts` — `createUserTimingTap(opts?: { perf?: PerfLike })`:
+   begun → `perf.mark("telic:<intent>:<attemptId>", { detail })`; each
+   terminal mark → `perf.measure("telic:<intent> <phase>", { start: <the
+   begun mark name>, detail })`, guarded so a missing begin mark (ring-evicted
+   or attached late) is a silent no-op. Defaults to `globalThis.performance`;
+   inert when absent or when mark/measure throw (never propagates).
+4. All taps: exceptions inside the injected sinks are caught by the CORE's
+   S7.3 tap-error handling — taps themselves do not add try/catch around the
+   whole onMark, only around environment probes documented above.
+
+## S17. Analytics tap (src/taps/analytics.ts)
+
+1. `createAnalyticsTap(opts): Tap & { recheck(): void }` with opts:
+   `send(event)` (vendor-agnostic sink: `{ name: string; props?: Record<string,
+   string | number | boolean> }`), `consent: () => boolean` (checked per
+   mark), `whileDenied?: "drop" | "buffer"` (default "drop"; buffer is
+   FIFO-capped at 50, oldest dropped), `rules: readonly AnalyticsRule[]`,
+   `dedupe?: { load(): readonly string[]; save(keys: readonly string[]): void }`
+   (persistence for once-keys; loaded once at construction, save called after
+   each newly-recorded key).
+2. `AnalyticsRule`: `{ on: IntentPattern; kind: MarkKind; when?(mark, view):
+   boolean; once?: "per-intent" | "per-attempt" | "off" (default "off");
+   onceKey?: string; map?(mark, view): AnalyticsEvent | undefined;
+   emit?(mark, view): void }`. At least one of map/emit required. `map`'s
+   event goes to `send`; `emit` is the vendor-side-effect escape hatch
+   (identify calls, deduped conversion pixels) and runs under the SAME
+   once/consent gating as map.
+3. `once` semantics — the mechanical replacement for hand-rolled fired-once
+   sets: "per-intent" fires the rule at most once EVER (key = `onceKey` when
+   given, else `<on>|<kind>`); "per-attempt" at most once per attempt (key
+   suffixed with the attempt id — per-attempt keys are NOT persisted via
+   dedupe, only per-intent keys are). A rule whose `when` returns false does
+   NOT consume its once-key.
+4. Consent gating: `consent()` is evaluated per matching mark. Denied +
+   "drop" → nothing. Denied + "buffer" → the RESOLVED actions (send payload /
+   emit thunk) buffer; `recheck()` flushes FIFO when `consent()` is true,
+   applying once-dedup at flush time (a key consumed by a live mark while
+   buffered wins; the stale buffered action is discarded).
+5. No `onAttach` replay — historical marks are not analytics events.
+6. Rule callbacks that throw propagate to core's S7.3 tap-error handling
+   (diagnostic, never a crash); the tap adds no internal try/catch beyond
+   what S13.4 sanctions.
+
+## S14. Agent surface (src/agent/surface.ts)
+
+1. `exposeAgentSurface(runtime, opts?: { key?: string; target?: object }):
+   () => void` — installs a FROZEN facade at `target[key]` (default target:
+   globalThis, default key: "__INTENT_MEMORY__"); returns an uninstall fn.
+2. Facade: `{ version: 1, snapshot(), marks(sinceSeq?), inProgress(),
+   describe() }` — pure delegations to the runtime; everything returned is
+   already frozen/redacted by core semantics (snapshot excludes
+   exposure:"local" per S6.7; marks()/inProgress() delegate to memory and are
+   NOT additionally filtered — the facade is a local reader).
+3. Installing over an existing property: overwrite silently only when the
+   existing value is a previous telic facade (`version` present); otherwise
+   leave the property alone and return a no-op uninstaller.
+4. SSR-safe: no module-scope environment access; installing onto an explicit
+   `target` works in any runtime.
+
+## S15. Mediation — handle() / dispatch() (src/mediate.ts)
+
+The optional command half of the bus. THE INITIATIVE BOUNDARY governs everything
+here: telic never owns time or transport — handlers run synchronously downstream
+of a dispatch() call, never from queues, timers, retries, or transports.
+
+1. Handler registries are PER-RUNTIME (revised per D18; supersedes the v1
+   module-level-only design). Module-level `handle(name, handler)` registers
+   in a module handler registry that follows the DEFAULT runtime with the same
+   late-bound semantics as S10.4/S10.5 — declarations survive
+   `configureDefaultRuntime` (re-applied onto the new runtime; parked-dispatch
+   queues do NOT survive a configure — the old runtime's attempts belong to
+   it). Explicit runtimes get their own isolated mediation world via
+   `createMediator(runtime): { handle, dispatch, command }` — nothing shared
+   with the module world (test isolation by construction). `handler:
+   (attempt, payload) => Promise<{ ok: boolean; data?; error? }>` — settlement
+   follows run() semantics (S3.12). `handle` returns an unregister fn (also
+   disposable). ONE handler per name PER REGISTRY: re-registering fires
+   diagnostic `handler-replaced` and last-wins (fan-out stays on()'s job).
+   ONE mediator per runtime is the supported shape: a second mediator on the
+   same runtime keeps its own registry but the LAST mediator's registry drives
+   that runtime's `handled` probe. Do not `createMediator(currentRuntime())` —
+   the default runtime is mediated by the module-level API; a shadowing
+   mediator's probe lasts only until the next configure.
+2. `dispatch(name, payload, opts?)` returns the `Attempt` immediately; the
+   handler runs async. Begin mechanics: uses the existing module declaration's
+   config when one exists, else begins undeclared (config-less) — dispatch
+   NEVER fires `duplicate-intent`. The handler is invoked inside
+   `within(attempt)` so its own begins are parented.
+3. No handler registered → the attempt is begun and immediately rejected with
+   reason `{ code: "TELIC_NO_HANDLER" }` + diagnostic `no-handler`. Dispatch
+   still returns the attempt (observable failure, never a throw).
+4. Handler throw → attempt rejected with the thrown value, NOT rethrown to the
+   dispatcher (dispatch is decoupled; the dispatcher observes via
+   `attempt.settled`, which never rejects).
+5. Silent mode: dispatch returns an inert attempt and the handler is NOT
+   invoked (mediation is off wherever recording is off — SSR safety).
+6. New diagnostics: `handler-replaced`, `no-handler` (added to the Diagnostic
+   union in types.ts).
+7. Parked dispatch (the race-absorber for presence-based registration, P10b):
+   `dispatch(name, payload, { ifUnhandled: "park", abandonWhen? })` — when no
+   handler is registered, the attempt STAYS ACTIVE (truthful: the intent is
+   pending) and the dispatch is parked in FIFO order per intent name. A later
+   `handle(name, …)` drains that name's parked dispatches in order,
+   synchronously downstream of the registration call (initiative boundary
+   intact: no timers, no queues across time — the caller bounds the wait via
+   `abandonWhen`, and navigation/unmount auto-abandon apply as usual). A
+   parked attempt that abandons (signal, navigation, dispose) leaves the park
+   queue. Default remains `ifUnhandled: "reject"` (S15.3). Parking in silent
+   mode: inert attempt, nothing parked. The `no-handler` diagnostic does NOT
+   fire for parked dispatches (parking is intentional); a drained dispatch
+   executes exactly like S15.2.
+8. `command(name)` — the typed stub factory (D18): returns a callable
+   `(payload, opts?) => Attempt` that delegates to `dispatch(name, payload,
+   opts)`. Purpose is DX, not semantics: the OWNING domain exports the stub
+   from its contract subpath, call sites import the stub — jump-to-definition
+   lands on the contract, the name string lives in exactly one place, and
+   registry typing flows through the stub's signature. `createMediator`'s
+   `command` binds to that mediator's registry; the module-level `command`
+   binds to the default-runtime world.
+
+## S12 amendment (descriptor invokability)
+
+5. `IntentDescriptor` gains `handled: boolean` — true while a handler is
+   currently registered for the name (live value at describe() call time, so
+   presence-based registration is visible to agents before they dispatch).
+   Revised per D18: `handled` reflects THE RUNTIME'S OWN mediation registry —
+   the default runtime reports the module-world registry; an explicit runtime
+   reports its own `createMediator` registry (false everywhere when it has
+   none). A runtime can no longer advertise capabilities it cannot dispatch.
+
+## S16. Flow — the saga coordinator as a value (src/flow.ts)
+
+1. `flow(name, payload, opts, steps)` records a parent attempt (keyed per
+   opts.key with dedupe semantics per S2.4) and runs `steps` SEQUENTIALLY,
+   each as a child attempt parented to the flow attempt. Returns a promise of
+   `{ ok: true, outcomes } | { ok: false, step, reason }` that never rejects.
+2. `step(intentName, fn, opts?)` — `fn(ctx, attempt)` where `ctx` accumulates
+   prior steps' outcomes by step intent name and `attempt` is the CHILD
+   attempt (its id is the caller's Idempotency-Key material). fn returns
+   run()-style `{ ok, data?, error? }`; child settlement follows S3.12
+   mapping; fn throw = rejection.
+3. Child attempts get `key` = `<flow key>:<step intent>` when the flow has a
+   key. The begun mark and AttemptView now carry the optional `key` (core
+   change, S2.1 amended) so resume queries are possible.
+4. `skipIfFulfilled: true` on a step: before running, if memory holds a
+   FULFILLED attempt of that step intent with the same key, the step is
+   skipped — its recorded outcome (from the fulfilled attempt's view) is fed
+   into ctx and NO new child attempt is begun. Without a flow key,
+   skipIfFulfilled is inert (no identity to match on).
+5. A step rejection rejects the FLOW attempt with `{ step, reason }`; remaining
+   steps never begin. Steps already fulfilled stay fulfilled (compensation is
+   the app's business — telic records, the caller reconciles).
+6. Flow takes no initiative: no retries, no timers, no parallelism in v1.
+   Resume = the caller invokes flow() again with the same key; fulfilled
+   children (per S16.4) skip. Cross-reload resume requires the persistence
+   tap (future phase) — without it, skip-matching is same-session only.
+   Document this honestly.
+
+## S11. Purity & environment constraints
+
+1. No `window`/`document`/`navigation` access at module scope. Import must be
+   free of ENVIRONMENT side effects (SSR + test safety) — internal,
+   environment-free wiring between the library's own modules (e.g. mediate.ts
+   feeding core's handled-probe) is permitted.
+2. Zero runtime dependencies. No console.*, no Date.now/Math.random except as
+   documented defaults resolved at runtime-creation time.
+3. Everything conforms to `src/types.ts` — no `any`, no `as` (except
+   `as const`), explicit return types, isolatedDeclarations-clean.

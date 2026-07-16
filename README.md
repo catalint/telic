@@ -307,7 +307,7 @@ The design is documented in full and travels with the package (in `packages/core
 ## Status
 
 **0.1.0 — the first public release.** telic was designed spec-first and proven inside a
-production Romanian SaaS before extraction, then hardened by an external adoption review from
+production SaaS before extraction, then hardened by an external adoption review from
 a second production monorepo (which set much of the roadmap below). The API is committed under
 semver from here; see [CHANGELOG.md](CHANGELOG.md). The emitted type declarations are checked
 against TypeScript 5.5 through the latest release on every commit, including cross-domain

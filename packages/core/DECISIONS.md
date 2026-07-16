@@ -200,3 +200,17 @@ and @telic/react, with version-exists guards so manual publishes and re-runs
 stay green. First publish of any NEW package remains manual (npm requires the
 package to exist before a trusted publisher can be configured). Verification
 (typecheck/test/size) runs in the same job before any publish.
+
+**D22. No server runtime — server correlation is a contract (2026-07-16).**
+Evaluated porting telic (or subsets) to the server; rejected. Server-side,
+every differentiating pillar has a mature owner: OpenTelemetry owns semantic
+tracing, workflow engines (Temporal-class) own durable sagas — by OWNING time
+and transport, the opposite of telic's initiative boundary — and `abandoned`
+barely exists where requests complete or error. A process-wide tape would
+also interleave concurrent users (the same reason SSR mode is silent).
+Adopted instead: PATTERNS P11 — the attempt id already travels as the
+Idempotency-Key, so a ~30-line vanilla middleware joins the client's intent
+timeline to OTel spans/baggage and structured logs; a dev-mode response-header
+channel can flow server breadcrumbs back into the client tape via wire +
+ingest. AP9 records the anti-pattern. This makes telic complementary to OTel
+shops rather than competitive with them.

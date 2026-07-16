@@ -262,3 +262,58 @@ Failure: the wizard abandons itself on every step change. Correction: scope
 `boundTo` to the flow's whole territory (`/wizard/*`) or omit it — soft
 navigation only abandons `boundTo`-violating attempts by design, precisely so
 SPA wizards survive their own navigation.
+
+### P11. Server correlation — a contract, not a port
+
+telic does not run on the server, on purpose. Every pillar that differentiates
+it in the browser already has a mature server-side owner: semantic tracing
+belongs to OpenTelemetry (request-scoped context, W3C propagation, the APM
+ecosystem); durable sagas belong to workflow engines (Temporal, Inngest,
+queue flows) — which succeed precisely by OWNING time and transport, the
+opposite of telic's initiative boundary. `abandoned` barely exists
+server-side; requests complete or error, nothing walks away. And a server
+module singleton spans concurrent users — recording there would interleave
+strangers' tapes (which is why SSR mode is silent).
+
+What the server CAN do — cheaply and uniquely — is JOIN the client's intent
+timeline. The attempt id already travels on the wire as the Idempotency-Key
+(P3/P8). A ~30-line middleware stamps it into whatever observability the
+server already has:
+
+```ts
+// e.g. Express/Hono/Fastify middleware — no telic import, just the header
+const attemptId = req.headers["idempotency-key"];
+if (attemptId) {
+	// OTel: joins the trace to the client's intent identity
+	trace.getActiveSpan()?.setAttribute("telic.attempt_id", attemptId);
+	propagation.getActiveBaggage(); // or: add attempt_id to baggage for downstream services
+	// structured logs: every log line for this request carries the attempt id
+	logger = logger.child({ attemptId });
+}
+```
+
+Result: one identifier connects "user began checkout" (client tape) → "server
+processed payment, retried twice, 800 ms" (OTel/APM) → "attempt rejected
+card_declined" (client tape). No other tool offers that join, because no
+other tool has a client-side attempt identity to join ON.
+
+**Dev-mode variant — server marks flowing back into the tape:** a server can
+return correlation breadcrumbs in a response header (JSON array of
+`noted`-shaped entries carrying the attempt id); a small client fetch-wrapper
+parses the header, builds marks via the wire format, and `runtime.ingest()`s
+them with `origin: { app: "api" }` — the server's steps appear inline in the
+client timeline, devtools, and the agent surface. Keep it dev-only (header
+size, exposure discipline: the server must apply the same
+identities-never-on-the-tape rule as AP7).
+
+### AP9. Porting telic to the server
+
+```ts
+// ❌ a Node runtime recording "server intents" into a process-wide tape
+const runtime = createRuntime(); // one tape, every concurrent user
+```
+
+Failure: interleaved users, a worse OpenTelemetry, and — if flow() is used
+for server sagas — a worse Temporal with no retries by design. Correction:
+P11's contract. The server contributes correlation; its memory lives where it
+already lives (traces, logs, the database).

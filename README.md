@@ -15,9 +15,28 @@ you already use, and the same record feeds your error reports, your funnel, your
 frontend domains, and any AI agent that needs to know what the user was doing.
 
 **It never owns time or transport** — no retries, no queues, no schedulers, no
-network of its own. Recording is the core; an optional mediation layer
-(`handle`/`dispatch`, `flow`) adds cross-domain invocation and saga bookkeeping,
-but everything telic invokes runs synchronously downstream of a call you made.
+network of its own. Everything telic invokes runs synchronously downstream of a
+call you made.
+
+## Three layers, adopted independently
+
+1. **Record** — declare typed intents and record their lifecycle beside whatever
+   state management you already have. Zero invasiveness; works day one. Feeds
+   breadcrumbs, analytics, User-Timing, and OTel through taps.
+2. **Remember** — the tape is an in-page, queryable session memory:
+   `memory.inProgress()`, late subscribers that hear the past (`replay`),
+   optional persistence across reloads, cross-tab transports, and a frozen
+   read surface for AI agents.
+3. **Mediate** *(optional)* — when domains must invoke each other **without
+   importing each other** (micro-frontends, Nx-style cycle bans, AI agents):
+   one domain `handle()`s a capability — registered presence-based, so "no
+   handler" is a truthful state — and others `dispatch()` it through typed
+   `command()` stubs. `flow()` coordinates multi-domain sagas with recorded
+   child attempts, keyed resume, and idempotency keys, while step order and
+   error policy stay in your code.
+
+You can stop at layer 1 forever and still get most of the value. Nothing in a
+later layer is required by an earlier one.
 
 ## Install
 
@@ -67,6 +86,26 @@ One declaration simultaneously yields:
 - **A machine-legible answer to "what is the user doing?"** — for embedded copilots,
   AI test explorers, and agent standards like WebMCP, which expose what an agent *can do*
   but not what the user *was doing*
+- **Cross-domain invocation without imports** — capabilities registered where their UI
+  lives, dispatched from domains (or agents) that never import them, coordinated into
+  sagas by `flow()` when the goal spans domains
+
+## What's in the box
+
+| Subpath | What it gives you |
+|---|---|
+| `@telic/core` | intents, attempts, memory, subscriptions, the default runtime |
+| `…/taps/breadcrumbs` · `…/taps/sentry` | every mark as an error-report breadcrumb (vendor-neutral / Sentry preset) |
+| `…/taps/analytics` | declare-once funnel rules, at-most-once dedup, consent gating, CI-assertable `trace` |
+| `…/taps/user-timing` · `…/taps/otel` | marks in the DevTools Performance panel / attempts as OTel spans |
+| `…/mediate` | `handle` / `dispatch` / `command` stubs, parked dispatch |
+| `…/flow` | the saga coordinator-as-a-value |
+| `…/persist` · `…/wire` | tape across reloads (exposure-aware) + the validated wire format |
+| `…/transports/broadcast` · `…/post-message` · `…/shared-worker` | cross-tab gossip, cross-app bridging, authoritative cross-tab hub |
+| `…/adapters/tanstack-query` · `…/adapters/xstate` | provenance links from the machinery you already run |
+| `…/testing` · `…/devtools` · `…/agent` | deterministic test runtimes, a Trusted-Types-safe overlay, `window.__INTENT_MEMORY__` |
+| `@telic/react` | hooks with StrictMode/HMR semantics specified and contract-tested |
+| `@telic/lint` | taxonomy governance in CI: setter names, duplicates, scope ownership, dead contracts |
 
 ## What it does & why it's helpful
 
@@ -112,30 +151,36 @@ Also honest: an `unload` listener plus a flag can hand-roll one instance of this
 earns its keep when abandonment must be *consistent* across many intents and consumable by
 code that didn't create the attempt.
 
-### 3. The checkout saga: reload mid-flight, resume where it broke
+### 3. The checkout saga: `flow()` — reload mid-flight, resume where it broke
 
 ```ts
-const submit = checkout.begin(cart, { key: cart.id, onConflict: "dedupe" })
-// child attempts per domain; each AttemptId doubles as the Idempotency-Key header
-for (const step of stepsFor(cart)) {
-  if (memory.has(step.intent, { phase: "fulfilled" })) continue  // already done pre-reload
-  await step.run()
-}
+import { flow, step } from "@telic/core/flow"
+
+const result = await flow("checkout.submit", cart, { key: cart.id }, [
+  step("identity.register", (ctx, a) => api.register(cart.user, { idempotencyKey: a.id }),
+       { skipIfFulfilled: true }),
+  step("address.create",    (ctx, a) => api.createAddress(cart.address, { idempotencyKey: a.id }),
+       { skipIfFulfilled: true }),
+  step("order.place",       (ctx, a) => api.placeOrder(ctx["address.create"], { idempotencyKey: a.id })),
+])
+// → { ok: true, outcomes } | { ok: false, step, reason } — never throws
 ```
 
-After a mid-flight reload, memory (with the persistence tap) answers: registration
-fulfilled, address fulfilled, payment rejected — resume at payment, skip the rest. The
-`key` dedup makes double-submit unrepresentable across islands and re-renders.
+Each step is a recorded child attempt whose id doubles as the Idempotency-Key header. After
+a mid-flight reload (with the persistence tap), invoking the same keyed flow again skips the
+steps that already fulfilled and resumes at the one that broke. Keyed dedup makes
+double-submit unrepresentable across components, re-renders, and the reload boundary. When a
+step rejects, the flow rejects with `{ step, reason }` and memory knows exactly which
+upstream steps committed — your compensation logic gets precise context instead of guesses.
 
-**Scrutiny — the biggest bullshit risk in this README, so precisely:** the tape does not
-resume anything. Resume requires (a) an orchestrator written to consult memory and re-run,
-and (b) **server-side idempotency** — without it, replaying a step whose response was lost
-double-charges someone, and no client library can fix that. What the tape contributes is the
-durable what-happened record, the correlation ids that make server idempotency cheap to
-adopt, and dedup. TanStack Query's mutation persistence solves an overlapping problem for
-single mutations; use it for execution — the tape links to it, it doesn't replace it.
-Also: double-submit *within one button* is solved by `disabled` in one line; keyed dedup
-earns its keep across surfaces and across the reload boundary only.
+**Scrutiny — the biggest bullshit risk in this README, so precisely:** `flow()` provides
+the *bookkeeping* of a saga, not its *reliability*. It never retries, never queues, never
+runs in the background — re-invocation is yours, and **server-side idempotency is
+mandatory**: without it, replaying a step whose response was lost double-charges someone,
+and no client library can fix that. What telic contributes is the coordinator scaffold, the
+durable what-happened record, and correlation ids that make server idempotency cheap to
+adopt. TanStack Query's mutation persistence solves an overlapping problem for single
+mutations; use it for execution — the tape links to it, it doesn't replace it.
 
 ### 4. Declare the funnel once; destinations become projections
 
@@ -190,6 +235,34 @@ contains.
 is an AI test-explorer tier (it gained an oracle: "intent begun but never settled" = probable
 UI dead-end). Embedded-copilot and WebMCP pairings are plausible and cheap but unproven —
 which is exactly why this is a tap on the read surface, not a core dependency.
+
+### 7. Invoke a capability you're not allowed to import
+
+```ts
+// the cart domain OWNS the capability — registered while its UI is mounted
+// (unregister on unmount: "no handler" is a truthful state, not a loading bug)
+handle("cart.addItem", async (attempt, item) => addItem(item, { idempotencyKey: attempt.id }))
+
+// the cart domain's contract subpath exports a typed stub — one place owns the string
+export const addToCart = command("cart.addItem")
+
+// any other domain — or an AI agent — invokes without importing cart's code:
+const attempt = addToCart({ sku }, { ifUnhandled: "park", abandonWhen: AbortSignal.timeout(3000) })
+const outcome = await attempt.settled   // never rejects; observe the terminal phase
+```
+
+In monorepos with dependency-cycle bans (Nx-style), reverse-direction reactions —
+"payments fulfilled → auth refreshes → portal invalidates" — literally cannot be imports;
+`on()` covers the reactions and `dispatch` covers the invocations. Parked dispatch absorbs
+mount-order races: the attempt stays truthfully active until the handler registers, bounded
+by a deadline *you* own (that `AbortSignal.timeout` is the caller's clock, not the library's).
+
+**Scrutiny:** within your own domain, **call your own functions** — dispatch there is
+stringly-typed indirection with broken jump-to-definition, and our own docs list it as an
+anti-pattern (AP4). Mediation earns its keep only at real boundaries: separately-owned
+modules, micro-frontends, and agent invocation. One handler per capability, ever — fan-out
+stays `on()`'s job, because multiple executors per command is how event-choreography chaos
+sneaks back in.
 
 ## Isn't this just X?
 
@@ -307,12 +380,14 @@ The design is documented in full and travels with the package (in `packages/core
 
 ## Status
 
-**0.1.0 — the first public release.** telic was designed spec-first and proven inside a
-production SaaS before extraction, then hardened by an external adoption review from
-a second production monorepo (which set much of the roadmap below). The API is committed under
-semver from here; see [CHANGELOG.md](CHANGELOG.md). The emitted type declarations are checked
-against TypeScript 5.5 through the latest release on every commit, including cross-domain
-`IntentRegistry` augmentation across the compiled declaration boundary.
+**0.3.0.** telic was designed spec-first and proven inside a production SaaS before
+extraction, then hardened by an external adoption review from a second production monorepo.
+The founding roadmap is complete: recording, memory, taps, mediation, flow, persistence,
+transports, adapters, React bindings, and taxonomy linting have all shipped. The API is
+committed under semver; see [CHANGELOG.md](CHANGELOG.md). Emitted type declarations are
+checked against TypeScript 5.5 through the latest release on every commit, including
+cross-domain `IntentRegistry` augmentation across the compiled declaration boundary.
+Future work is demand-driven — open an issue.
 
 ## Packages
 
@@ -326,9 +401,6 @@ against TypeScript 5.5 through the latest release on every commit, including cro
 - **@telic/lint** — the taxonomy governance CLI: flags setter-like intent names, cross-file
   duplicate declarations, scope-ownership violations, and dead contracts (`command()` with no
   `handle()`, or vice versa).
-
-## Roadmap
-
 
 ## License
 

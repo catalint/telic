@@ -1,0 +1,30 @@
+# telic
+
+> A recorded intent + memory layer for frontends. Record typed user-intent
+> lifecycles (begun → fulfilled/rejected/abandoned) beside any state
+> management, query them as in-page session memory, and optionally mediate
+> cross-domain invocation. Zero dependencies. It never owns time or transport.
+
+Three packages: `@telic/core` (the library), `@telic/react` (hooks),
+`@telic/lint` (taxonomy CLI). All docs below are markdown; SPEC files are
+normative (clause-numbered — cite clauses like "S3.4" when discussing
+behavior). The npm package ships all core docs, so they are also available in
+`node_modules/@telic/core/` after install.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/catalint/telic/main/README.md): pitch, three layers, worked examples with honest scrutiny notes, "isn't this just X" comparisons
+- [AI usage guide](https://raw.githubusercontent.com/catalint/telic/main/packages/core/AI-GUIDE.md): the condensed correct-usage rules for coding agents
+- [SPEC — core](https://raw.githubusercontent.com/catalint/telic/main/packages/core/SPEC.md): normative behavior, clauses S1–S27
+- [SPEC — react](https://raw.githubusercontent.com/catalint/telic/main/packages/react/SPEC.md): hook contracts R1–R6 (StrictMode/HMR semantics)
+- [SPEC — lint](https://raw.githubusercontent.com/catalint/telic/main/packages/lint/SPEC.md): CLI rules L1–L4
+- [DESIGN](https://raw.githubusercontent.com/catalint/telic/main/packages/core/DESIGN.md): why — the initiative boundary, risks, Redux lessons
+- [PATTERNS](https://raw.githubusercontent.com/catalint/telic/main/packages/core/PATTERNS.md): P1–P12 patterns, AP1–AP9 anti-patterns with corrections
+- [APPROACHES](https://raw.githubusercontent.com/catalint/telic/main/packages/core/APPROACHES.md): per-axis decision guide (recording, coupling ladder, typing, durability)
+- [DECISIONS](https://raw.githubusercontent.com/catalint/telic/main/packages/core/DECISIONS.md): append-only decision log D1–D24 — what was decided and rejected
+
+## Optional
+
+- [PostHog recipe](https://raw.githubusercontent.com/catalint/telic/main/packages/core/docs/recipes/posthog.md): analytics tap wiring + CI parity via the trace hook
+- [CHANGELOG](https://raw.githubusercontent.com/catalint/telic/main/CHANGELOG.md)
+- [CONTRIBUTING](https://raw.githubusercontent.com/catalint/telic/main/CONTRIBUTING.md)

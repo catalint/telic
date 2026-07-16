@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 — 2026-07-16
+
+- **AI-agent legibility**: `AI-GUIDE.md` now ships in the package (condensed correct-usage
+  rules for coding agents + a paste-block for host agent configs); repo gains `llms.txt`
+  and `AGENTS.md`. No code changes.
+
 ## 0.3.2 / react 0.1.1 / lint 0.1.1 — 2026-07-16
 
 - **Fix (react, breaking-for-nobody-it-worked-for):** @telic/react 0.1.0 shipped with a literal `workspace:^` peer range — unresolvable outside this repo. 0.1.1 declares `@telic/core: ^0.3.0`; 0.1.0 is deprecated. The release pipeline now refuses to publish any manifest containing a workspace: range.

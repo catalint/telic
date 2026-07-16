@@ -410,6 +410,16 @@ Future work is demand-driven — open an issue.
   duplicate declarations, scope-ownership violations, and dead contracts (`command()` with no
   `handle()`, or vice versa).
 
+## For AI coding agents
+
+- **Using telic in your codebase?** The condensed correct-usage contract ships in the
+  package: `node_modules/@telic/core/AI-GUIDE.md` (five rules, correct shapes, a
+  paste-block for your project's agent config). All design docs ship alongside it.
+- **Fetching context?** [`llms.txt`](llms.txt) indexes everything, agent-first.
+- **Working on this repo?** [`AGENTS.md`](AGENTS.md) has commands, conventions, and gotchas.
+- At runtime, apps expose `window.__INTENT_MEMORY__` — a frozen read surface where agents
+  can ask what the user is doing right now (see example 6).
+
 ## Contributing
 
 Issues, use cases, docs fixes, and PRs of every size are welcome — see

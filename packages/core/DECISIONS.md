@@ -244,3 +244,13 @@ workspace: range. Rule: verification must run through the SAME tool as the
 production path — a lesson this project already learned once at the analytics
 sink level (D16's events-requested vs sinks-reached) and now re-learns at the
 packaging level.
+
+**D25. AI-agent legibility layer (2026-07-16).** Three artifacts, three
+audiences: `llms.txt` (repo root) for agents fetching context; `AGENTS.md`
+(+ CLAUDE.md pointer) for agents contributing to the repo; `AI-GUIDE.md`
+SHIPPED IN THE NPM PACKAGE for agents using telic inside consuming codebases
+— the five-rule condensed contract (lifecycle test, no PII on the tape,
+memory-not-truth, boundaries-only dispatch, prefer run()) plus a paste-block
+for host agent configs. Rationale: docs that live in node_modules are the
+only docs a coding agent reliably has at hand; the spec-first discipline
+already produced agent-grade material — this packages it for discovery.

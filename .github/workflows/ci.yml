@@ -18,7 +18,9 @@ jobs:
         with:
           node-version: latest
       - run: bun install --frozen-lockfile
-      - name: Typecheck
+      - name: Conventions gate
+        run: bun run conventions
+      - name: Build
         run: bun run build
       - name: Typecheck
         run: bun run typecheck
@@ -26,8 +28,19 @@ jobs:
         run: bun run test
       - name: Size gate
         run: bun run size
-      - name: publint
+      # Packaging shape is verified for EVERY published package — D24 shipped a
+      # broken @telic/react precisely because only core was checked here. publint
+      # runs on all three; attw runs wherever there is a types/exports surface to
+      # resolve (core, react) — the lint CLI is bin-only with no exports map, so
+      # attw has nothing to check there.
+      - name: publint (core)
         working-directory: packages/core
+        run: bunx publint --strict
+      - name: publint (react)
+        working-directory: packages/react
+        run: bunx publint --strict
+      - name: publint (lint)
+        working-directory: packages/lint
         run: bunx publint --strict
       # Full attw profile (D20): node16 (from ESM) and bundler resolution must
       # be fully green — the emitted files use extensioned relative imports.
@@ -37,8 +50,11 @@ jobs:
       #     exports-only package can never resolve there by design.
       #   - cjs-resolves-to-esm: require() consumers are out of contract; Node
       #     CJS callers can still use dynamic import().
-      - name: arethetypeswrong
+      - name: arethetypeswrong (core)
         working-directory: packages/core
+        run: bunx @arethetypeswrong/cli --pack . --ignore-rules no-resolution cjs-resolves-to-esm
+      - name: arethetypeswrong (react)
+        working-directory: packages/react
         run: bunx @arethetypeswrong/cli --pack . --ignore-rules no-resolution cjs-resolves-to-esm
 
   consumer-matrix:
@@ -49,8 +65,10 @@ jobs:
       matrix:
         # The emitted .d.ts must compile on the whole support floor (TS 5.5+)
         # up to the latest release; each entry runs BOTH resolution legs
-        # (bundler + node16, D20) and re-checks IntentRegistry augmentation
-        # across the compiled declaration boundary.
+        # (bundler + node16, D20), re-checks IntentRegistry augmentation across
+        # the compiled declaration boundary, and (via all-subpaths.ts) parses
+        # EVERY published subpath's .d.ts under the floor — not just the three
+        # the app fixture happens to import.
         typescript: ["5.5.4", "5.9.2", "6.0.3", "latest"]
     steps:
       - uses: actions/checkout@v4

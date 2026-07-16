@@ -36,15 +36,56 @@ clause-numbered specs (`packages/*/SPEC.md`); design boundaries live in
    erasable syntax only (no enums/namespaces/parameter properties), tabs,
    `.js`-extensioned relative imports (node16 emit), `type` over `interface`
    except the sanctioned `IntentRegistry` augmentation target.
-8. **Packaging:** `dependencies`/`peerDependencies` in publishable manifests
-   must never contain `workspace:` ranges (npm publish does not rewrite
-   them). New subpaths need an `exports` entry, a size budget in
-   `scripts/size-gate.ts`, and a CHANGELOG line.
+8. **Packaging:** `dependencies`/`peerDependencies`/`optionalDependencies` in
+   publishable manifests must never contain `workspace:` ranges (npm publish
+   does not rewrite them). New subpaths need an `exports` entry, a size budget
+   in `scripts/size-gate.ts`, and a CHANGELOG line.
 9. **Transports/security:** `postMessage` transport requires explicit origin
    allow-listing (`targetOrigin: "*"` is rejected by design); incoming
    transport data must go through `wire.ts` validation before `ingest`. The
    devtools module must stay Trusted-Types-safe (no `innerHTML` or string
    HTML sinks).
+
+## Already automated — don't re-litigate
+
+`bun run conventions` (in CI + the release ladder) mechanically enforces the
+cleanly-greppable rules: the initiative boundary, `.js`-extensioned relative
+imports, zero-dep core, no module-scope browser globals, and `exports`↔size-
+budget parity. You don't need to re-flag those by hand — spend the review on the
+semantic classes below, which a grep can't catch without false positives.
+
+## Bug classes this codebase has actually shipped — watch for regressions
+
+These are the recurring shapes a real review pass surfaced. Each is a genuine
+past defect; treat a new instance as a likely bug, not a nit.
+
+1. **Prototype-key lookups (D27).** A dynamic read on a plain object keyed by an
+   UNTRUSTED string — an intent name, a machine state name, a config scope name
+   — resolves an inherited `Object.prototype` member (`toString`, `constructor`,
+   `__proto__`, `valueOf`) instead of `undefined`, bypassing the undefined guard
+   and either crashing (`.map`/`.reject` on a function) or polluting a prototype.
+   Flag any `obj[dynamicKey]` / `obj?.[dynamicKey]` where `obj` is a plain object
+   literal or `Record` and the key is caller/model-controlled: require
+   `Object.hasOwn(obj, key) ? obj[key] : undefined`, or build the map as
+   `Object.create(null)` / a `Map`. (Fixed sites: `adapters/xstate`, `lint/rules`,
+   `flow`.)
+2. **Exposure recoverability (S6.7/S18.2).** `exposure` lives on `begun` marks
+   ONLY. Any code deciding a mark's exposure after the attempt's live record may
+   be gone (LRU-evicted) must NOT default to `"full"` — that leaks `local` data
+   to snapshots/persistence/transports. Also watch aggregation that upgrades a
+   `local` child's value into a non-local parent (e.g. `flow()` embedding a local
+   step's outcome in the flow parent's fulfilled mark). See the open exposure
+   issues before touching persist / transports / flow.
+3. **Dedup/once ordering and unboundedness (taps).** Record/consume a dedup or
+   once-key BEFORE the side effect that can throw — otherwise a throwing sink
+   re-fires the rule (double-count). A flush path (e.g. `recheck`) must be atomic:
+   never empty a buffer before firing, or a mid-flush throw drops the remainder.
+   Any per-attempt dedup set must be bounded (attempt ids never recycle).
+4. **CI-unstable output.** Diagnostic/CLI message BODIES must not embed absolute
+   filesystem paths — only the relativized `file` field is checkout-stable.
+5. **Keyed/parked idempotency.** A keyed dispatch that dedupes to a single
+   attempt must run its handler at most once — park queues must dedupe by attempt
+   identity, not enqueue one entry per call.
 
 ## Review tone
 

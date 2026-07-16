@@ -23,8 +23,9 @@ type Budget = {
 
 const packageRoot: string = join(import.meta.dir, "..");
 
-/** One row per package.json `exports` subpath. */
-const budgets: readonly Budget[] = [
+/** One row per package.json `exports` subpath. Exported so the repo-root
+ * conventions-gate can assert exports↔budget parity without running a build. */
+export const budgets: readonly Budget[] = [
 	{ entry: ".", file: "src/core.ts", maxBrotliBytes: 5000 },
 	{ entry: "./taps/console", file: "src/taps/console.ts", maxBrotliBytes: 460 },
 	{ entry: "./taps/breadcrumbs", file: "src/taps/breadcrumbs.ts", maxBrotliBytes: 420 },
@@ -122,4 +123,4 @@ async function main(): Promise<void> {
 	process.stdout.write("\nsize gate passed\n");
 }
 
-await main();
+if (import.meta.main) await main();

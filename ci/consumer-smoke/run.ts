@@ -46,10 +46,10 @@ async function checkLeg(workDir: string, version: string, leg: "bundler" | "node
 	console.log(`\n=== @telic/core vs TypeScript ${version} (${leg}) ===`);
 	const result =
 		leg === "node16"
-			? await $`./node_modules/.bin/tsc --strict --noEmit --module node16 --moduleResolution node16 --target es2022 --lib esnext,dom,dom.iterable consumer.ts augment.ts`
+			? await $`./node_modules/.bin/tsc --strict --noEmit --module node16 --moduleResolution node16 --target es2022 --lib esnext,dom,dom.iterable consumer.ts augment.ts all-subpaths.ts`
 					.cwd(workDir)
 					.nothrow()
-			: await $`./node_modules/.bin/tsc --strict --noEmit --moduleResolution bundler --module esnext --target es2022 --lib esnext,dom,dom.iterable consumer.ts augment.ts`
+			: await $`./node_modules/.bin/tsc --strict --noEmit --moduleResolution bundler --module esnext --target es2022 --lib esnext,dom,dom.iterable consumer.ts augment.ts all-subpaths.ts`
 					.cwd(workDir)
 					.nothrow();
 	if (result.exitCode === 0) {
@@ -74,6 +74,7 @@ async function checkVersion(tarball: string, version: string): Promise<boolean> 
 	);
 	cpSync(join(here, "consumer.ts"), join(workDir, "consumer.ts"));
 	cpSync(join(here, "augment.ts"), join(workDir, "augment.ts"));
+	cpSync(join(here, "all-subpaths.ts"), join(workDir, "all-subpaths.ts"));
 
 	await $`bun add ${tarball} typescript@${version}`.cwd(workDir).quiet();
 

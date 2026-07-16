@@ -24,15 +24,21 @@ jobs:
       # OIDC trusted publishing requires npm >= 11.5.1 (Node 22 bundles 10.x)
       - run: npm install -g npm@latest
       - run: bun install --frozen-lockfile
+      - run: bun run conventions
       - run: bun run build
       - run: bun run typecheck
       - run: bun run test
       - run: bun run size
       - name: "Guard — no workspace: ranges in publishable manifests"
+        # npm publish does NOT rewrite workspace: ranges (D24). Check every
+        # dependency MAP that carries version ranges — dependencies,
+        # peerDependencies, and optionalDependencies. (bundledDependencies is an
+        # array of names, not ranges, so it cannot carry a workspace: range.)
         run: |
           for pkg in core react lint; do
-            if node -p "JSON.stringify({...require('./packages/'+process.argv[1]+'/package.json').dependencies, ...require('./packages/'+process.argv[1]+'/package.json').peerDependencies})" "$pkg" | grep -q "workspace:"; then
-              echo "packages/$pkg has a workspace: range in a published field — npm publish does NOT rewrite these"; exit 1
+            MANIFEST="./packages/$pkg/package.json"
+            if node -p "const m=require('$MANIFEST'); JSON.stringify({...m.dependencies, ...m.peerDependencies, ...m.optionalDependencies})" | grep -q "workspace:"; then
+              echo "packages/$pkg has a workspace: range in a published dependency field — npm publish does NOT rewrite these"; exit 1
             fi
           done
       - name: Publish @telic/core

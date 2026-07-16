@@ -232,3 +232,15 @@ Docs: PostHog recipe with trace-based CI parity, P12 contract-subpath
 conventions. Remaining roadmap after this release: intentionally empty —
 future work is demand-driven (AsyncContext Tier-1.5 when the platform ships
 it; anything else arrives as adopter asks).
+
+**D24. The workspace-protocol publish bug and its guard (2026-07-16).**
+@telic/react@0.1.0 shipped to npm with a literal `workspace:^` peer dependency
+— unresolvable for every consumer. Root cause: pack-tool mismatch — the
+package was VERIFIED with `bun pm pack` (which rewrites workspace ranges) but
+PUBLISHED with `npm publish` (which does not). Fixed in 0.1.1 (real semver
+range, 0.1.0 deprecated) and guarded permanently: the release workflow now
+fails before publishing if any publishable manifest field contains a
+workspace: range. Rule: verification must run through the SAME tool as the
+production path — a lesson this project already learned once at the analytics
+sink level (D16's events-requested vs sinks-reached) and now re-learns at the
+packaging level.

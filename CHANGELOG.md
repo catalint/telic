@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 / react 0.1.1 / lint 0.1.1 — 2026-07-16
+
+- **Fix (react, breaking-for-nobody-it-worked-for):** @telic/react 0.1.0 shipped with a literal `workspace:^` peer range — unresolvable outside this repo. 0.1.1 declares `@telic/core: ^0.3.0`; 0.1.0 is deprecated. The release pipeline now refuses to publish any manifest containing a workspace: range.
+- Metadata: full author info, richer core description/keywords, `main`/`types` fallbacks for legacy resolution on core, `engines.node >= 20` on the lint CLI, `packageManager` pin at the workspace root.
+
 ## 0.3.1 — 2026-07-16
 
 - Docs: README rewritten to surface all three layers — mediation and `flow()` now have

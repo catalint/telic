@@ -10,5 +10,17 @@
 		"test": "bun run --filter='*' test",
 		"build": "bun run --filter '@telic/core' build && bun run --filter '@telic/react' build && bun run --filter '@telic/lint' build",
 		"size": "bun run --filter='*' size"
-	}
+	},
+	"description": "telic monorepo — a recorded intent + memory layer for frontends",
+	"license": "MIT",
+	"author": {
+		"name": "Catalin Tanasescu",
+		"email": "catalint@gmail.com",
+		"url": "https://github.com/catalint"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/catalint/telic.git"
+	},
+	"packageManager": "bun@1.3.13"
 }

@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 / react 0.1.2 — 2026-07-17
 
 **BREAKING — payload-privacy / egress machinery removed (the data boundary, D28/D30):**
 
 - **Breaking (core):** removed `IntentConfig.exposure` (the `full`/`local`/`private` reach class) and its `"[private]"` payload mask, `IntentConfig.redact`, the `strictPrivacy` runtime option, and the `missing-exposure` diagnostic — along with every egress filter they drove (snapshot exclusion, persistence's local-skip, and the broadcast / post-message / shared-worker local & private gates). telic core now records a mark and holds no opinion about where it travels: taps, persistence, and transports forward every mark, and scoping is the caller's `send`/pattern filter at wiring time. The `exposure` wire field is gone; the wire reader is tolerant, so a stale `exposure` on an old mark is ignored (no migration). Keeping sensitive values off the payload is the caller's job (PATTERNS AP7).
 - **Docs:** DESIGN gains "The data boundary" — the twin of the initiative boundary: telic records what it is given and holds no egress opinion; the identity boundary (no raw identities on the tape) is the caller's. Rationale in DECISIONS D28/D30.
+- **react (0.1.2):** widened the `@telic/core` peer range to `^0.3.0 || ^0.4.0` so the adapter installs against the 0.4.0 core. No code change — the React adapter never touched the removed surface.
 
 Whole-monorepo review pass — confirmed fixes (all behind the same `bun run check` gate; SPEC clauses + DECISIONS entries added in the same change):
 

@@ -1,6 +1,6 @@
 {
 	"name": "@telic/core",
-	"version": "0.3.3",
+	"version": "0.4.0",
 	"description": "A recorded intent + memory layer for frontends: record typed user-intent lifecycles (begun → fulfilled/rejected/abandoned) beside any state management, query them as in-page session memory, and optionally mediate cross-domain invocation (handle/dispatch, flow sagas). Zero dependencies.",
 	"license": "MIT",
 	"author": {

@@ -1,6 +1,6 @@
 {
 	"name": "@telic/react",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "React adapter for @telic/core — stable intent handles, presence-based mediation handles, and useSyncExternalStore memory hooks. Mounts are not intents.",
 	"license": "MIT",
 	"author": {
@@ -49,7 +49,7 @@
 	},
 	"peerDependencies": {
 		"react": ">=18",
-		"@telic/core": "^0.3.0"
+		"@telic/core": "^0.3.0 || ^0.4.0"
 	},
 	"devDependencies": {
 		"@happy-dom/global-registrator": "^20.10.6",

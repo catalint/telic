@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Agent descriptor (core):** `IntentConfig`/`IntentDescriptor` gain an optional `agent: { summary?, input? }` field. The caller projects the payload shape itself (a hand-written or `z.toJSONSchema`-derived JSON Schema) and telic forwards it verbatim through `describe()` — closing the gap where an agent could see `hasPayloadSchema: true` but never the actual shape. telic derives, validates, and transforms nothing; `input` is forwarded by reference, never deep-frozen (the data boundary, D30). Additive. (D31, SPEC S1.6/S12.6)
+- **`duplicate-instance` diagnostic (core):** `createRuntime` now always checks, in browser-like environments, whether a second loaded copy of `@telic/core` has booted — via a `globalThis` sentinel keyed by a per-module identity token — and fires `duplicate-instance` at most once per probed host per module copy, **counted on delivery**: a detection on a runtime with no `onDiagnostic` (the lazy default) consumes nothing, so the diagnostic still reaches the `configureDefaultRuntime({ onDiagnostic })` wiring the recipe documents. Makes real a claim the README already made about a "dev-mode duplicate-instance detector" that didn't exist in code. Additive — new `Diagnostic` union member and a new optional `InstanceSentinelEnv` second parameter on `createRuntime`. (D32, SPEC S10.8)
+- **Docs:** new micro-frontends recipe (`packages/core/docs/recipes/micro-frontends.md`) — Module Federation `shared: { singleton: true }` and single-spa import-map wiring, plus confirming a single runtime instance via `onDiagnostic`.
+- **Docs:** new cross-realm dispatch design doc (`packages/core/docs/design/cross-realm-dispatch.md`) — a design pass on dispatching to a handler that lives in another realm (PROPOSALS PR-2). Design only; no decision made, no code changed.
+- **Docs:** PATTERNS.md now cites the prior art its patterns build on (MediatR/NestJS CQRS for P7, the MediatR "you probably don't need it" debate and tsyringe/inversify for AP4); README links the new `packages/core/COMPARISON.md` before/after comparison from "Isn't this just X?".
+- **Agent skill:** new `skills/telic-intents/` — telic's patterns as an installable agent skill (SKILL.md + AGENTS.md in the vercel-labs/agent-skills layout): 18 rules in five priority categories, distilled from PATTERNS.md with before/after examples and diagnostic tie-ins. PATTERNS.md stays the source of truth; the conventions gate cross-checks the skill's `P#`/`AP#` and diagnostic references so drift breaks CI. (D33)
+
 ## 0.4.0 / react 0.1.2 — 2026-07-17
 
 **BREAKING — payload-privacy / egress machinery removed (the data boundary, D28/D30):**

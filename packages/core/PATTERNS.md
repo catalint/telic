@@ -89,6 +89,10 @@ const outcome = await attempt.settled
 Decision rule: **within your own domain, call your own functions; `dispatch`
 exists for crossing domain boundaries and for agents.** (See AP4.)
 
+The mechanism isn't novel — MediatR and NestJS CQRS are its mature
+incumbents; the novelty here narrows to the lifecycle and the agent surface
+(see [COMPARISON.md](COMPARISON.md)).
+
 ### P8. The flow pattern — coordinator + saga log, never choreography
 
 ```ts
@@ -211,6 +215,10 @@ dispatch("billing.calculateTotal", cart)
 
 Failure: stringly-typed indirection, broken jump-to-definition, a runtime
 registry standing in for the module system. Correction: P7's decision rule.
+Same argument as MediatR's own ["you probably don't need it inside your
+domain"](https://arialdomartini.github.io/mediatr) debate — without
+recording or an agent surface, a DI container (tsyringe/inversify) gets the
+same decoupling, typed.
 
 ### AP5. Handlers that own state
 

@@ -182,6 +182,17 @@ export type PayloadFor<Pat extends IntentPattern> = [NamesMatching<Pat>] extends
 
 type SchemaOut<S, D> = S extends StandardSchemaV1 ? StandardSchemaV1.InferOutput<S> : D;
 
+/**
+ * Caller-produced, already-projected agent descriptor (S1.6). telic forwards it
+ * verbatim and projects NOTHING itself — `input` is an opaque, caller-owned
+ * shape (e.g. hand-written or `z.toJSONSchema`-derived JSON Schema), the data
+ * boundary D30 places outside telic's realm.
+ */
+export type AgentDescriptor = {
+	readonly summary?: string;
+	readonly input?: unknown;
+};
+
 export type IntentConfig<
 	PS extends StandardSchemaV1 | undefined,
 	FS extends StandardSchemaV1 | undefined,
@@ -195,6 +206,8 @@ export type IntentConfig<
 	readonly rejected?: RS;
 	/** Free metadata for taps/agents ("funnel", "wizard"). */
 	readonly tags?: readonly string[];
+	/** Caller-produced agent descriptor, forwarded verbatim to describe() (S1.6). */
+	readonly agent?: AgentDescriptor;
 };
 
 export type OnConflict = "concurrent" | "dedupe" | "supersede";
@@ -365,7 +378,8 @@ export type Diagnostic =
 	| { readonly code: "late-configure" }
 	| { readonly code: "handler-replaced"; readonly intent: IntentName }
 	| { readonly code: "no-handler"; readonly intent: IntentName }
-	| { readonly code: "navigation-unavailable" };
+	| { readonly code: "navigation-unavailable" }
+	| { readonly code: "duplicate-instance" };
 
 export type RuntimeLimits = {
 	/** Ring-buffer size for marks. Default 500. */
@@ -412,6 +426,8 @@ export type IntentDescriptor = {
 	readonly hasPayloadSchema: boolean;
 	/** True while a mediation handler is currently registered for this name (live at describe() time). */
 	readonly handled: boolean;
+	/** The caller-declared agent descriptor (S12.6), present only when declared; forwarded verbatim. */
+	readonly agent?: AgentDescriptor;
 };
 
 export type Runtime = {

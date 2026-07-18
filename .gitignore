@@ -2,3 +2,5 @@ node_modules/
 dist/
 *.tgz
 # bun.lock is intentionally committed (kept)
+.claude/settings.local.json
+.mcp.json

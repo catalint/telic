@@ -8,6 +8,7 @@ import { compilePattern, matchesPattern } from "./pattern.js";
 import type { StandardSchemaV1 } from "./standard-schema.js";
 import type {
 	AbandonReason,
+	AgentDescriptor,
 	Attempt,
 	AttemptId,
 	AttemptPhase,
@@ -116,6 +117,43 @@ const SETTER_LIKE_PREFIXES = ["set", "update", "toggle", "change"] as const;
 const INERT_PHASE: AttemptPhase = Object.freeze({ phase: "active", since: 0 });
 
 // ---------------------------------------------------------------------------
+// Duplicate-instance sentinel (S10.8)
+// ---------------------------------------------------------------------------
+
+/** Well-known globalThis key a loaded copy claims with its module token (S10.8). */
+const INSTANCE_CLAIM_KEY = "__TELIC_CORE__";
+/** This module copy's identity; a second loaded copy of @telic/core gets a distinct one. */
+const moduleToken: object = {};
+/** Hosts this copy has DELIVERED duplicate-instance on (S10.8: once per host per copy, counted on delivery). */
+const duplicateInstanceDelivered = new WeakSet<object>();
+
+/** Injectable probe seam for the duplicate-instance sentinel — mirrors connectBrowserLifecycle's env (S10.6/S10.8). */
+export type InstanceSentinelEnv = {
+	readonly browserLike: boolean;
+	readonly host: Record<string, unknown>;
+};
+
+function checkDuplicateInstance(
+	env: InstanceSentinelEnv,
+	emit: (diagnostic: Diagnostic) => void,
+	canDeliver: boolean,
+): void {
+	if (!env.browserLike || duplicateInstanceDelivered.has(env.host)) return;
+	const claimed = env.host[INSTANCE_CLAIM_KEY];
+	if (claimed === undefined) {
+		env.host[INSTANCE_CLAIM_KEY] = moduleToken;
+		return;
+	}
+	// A distinct token means a second loaded copy — never overwrite the first claimer.
+	// The once-budget burns only on DELIVERY: a handler-less detection (the lazy
+	// default) must not silence a later configure's onDiagnostic (S10.8).
+	if (claimed !== moduleToken && canDeliver) {
+		duplicateInstanceDelivered.add(env.host);
+		emit({ code: "duplicate-instance" });
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Internal records
 // ---------------------------------------------------------------------------
 
@@ -177,6 +215,7 @@ type StoredIntentConfig = {
 	readonly fulfilled?: StandardSchemaV1;
 	readonly rejected?: StandardSchemaV1;
 	readonly tags?: readonly string[];
+	readonly agent?: AgentDescriptor;
 };
 
 /**
@@ -207,6 +246,7 @@ type DeclaredIntentMeta = {
 	readonly name: IntentName;
 	readonly tags: readonly string[];
 	readonly hasPayloadSchema: boolean;
+	readonly agent?: AgentDescriptor;
 };
 
 /** One first-declaration entry: the descriptor's static half + the erased config (handle rebuilds, S15.2). */
@@ -219,7 +259,7 @@ type DeclaredIntentEntry = {
 // createRuntime (S10.1)
 // ---------------------------------------------------------------------------
 
-export function createRuntime(opts?: RuntimeOptions): Runtime {
+export function createRuntime(opts?: RuntimeOptions, sentinelEnv?: InstanceSentinelEnv): Runtime {
 	const mode: RuntimeMode = opts?.mode ?? "record";
 	const now: () => number = opts?.now ?? Date.now;
 	const generateId: () => string = opts?.id ?? defaultIdGenerator();
@@ -260,6 +300,18 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 			// Diagnostics never throw (S10.2).
 		}
 	}
+
+	// Sentinel: a second loaded copy of @telic/core booting in the browser fires
+	// duplicate-instance on this runtime (S10.8). Gated by `document` like the
+	// default runtime (S10.4); the probe target is injectable for tests.
+	checkDuplicateInstance(
+		sentinelEnv ?? {
+			browserLike: typeof document !== "undefined",
+			host: asTyped<Record<string, unknown>>(globalThis),
+		},
+		emitDiagnostic,
+		onDiagnostic !== undefined,
+	);
 
 	function nextSeq(): Seq {
 		seqCounter += 1;
@@ -610,6 +662,9 @@ export function createRuntime(opts?: RuntimeOptions): Runtime {
 				name,
 				tags: Object.freeze([...(config?.tags ?? [])]),
 				hasPayloadSchema: config?.payload !== undefined,
+				// Wrapper frozen and telic-owned; `input` forwarded BY REFERENCE,
+				// never deep-frozen (S12.6 / the data boundary, D30).
+				...(config?.agent !== undefined ? { agent: Object.freeze({ ...config.agent }) } : {}),
 			});
 			declarations.set(name, { meta, config: asTyped<StoredIntentConfig | undefined>(config) });
 		}

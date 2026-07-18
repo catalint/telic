@@ -223,8 +223,9 @@ communication layer that works and one that races.
 **Scrutiny:** this only works if every island shares ONE runtime instance — a bundler that
 duplicates the module (two copies in two chunks, version skew in a monorepo, module
 federation) silently creates two tapes that each hear half the app. This is a real footgun,
-not an edge case; the library ships a dev-mode duplicate-instance detector (window sentinel)
-and documents the requirement prominently.
+not an edge case; the library ships an always-on `duplicate-instance` diagnostic — a second
+copy booting in the browser claims a `globalThis` sentinel and fires once when it finds the
+key already held — and documents the requirement prominently.
 
 ### 6. Machine-legible "what is the user doing"
 
@@ -271,6 +272,9 @@ stays `on()`'s job, because multiple executors per command is how event-choreogr
 sneaks back in.
 
 ## Isn't this just X?
+
+[packages/core/COMPARISON.md](packages/core/COMPARISON.md) is the code-level
+before/after companion to the takes below.
 
 ### …TanStack Query mutations?
 
@@ -382,7 +386,10 @@ The design is documented in full and travels with the package (in `packages/core
 | [PATTERNS.md](packages/core/PATTERNS.md) | **How** — patterns (P1–P10) and anti-patterns (AP1–AP8) for using it well |
 | [APPROACHES.md](packages/core/APPROACHES.md) | **Which** — a per-axis decision guide when there's more than one reasonable option |
 | [DECISIONS.md](packages/core/DECISIONS.md) | **When / what changed** — the append-only log of design decisions and what was rejected |
-| [Recipes](packages/core/docs/recipes/) | **Worked examples** — full end-to-end wiring against a real vendor, starting with PostHog |
+| [COMPARISON.md](packages/core/COMPARISON.md) | **Versus what** — code-level before/after against MediatR, NestJS CQRS, Comlink, DI containers, Redux, and micro-frontend buses |
+| [PROPOSALS.md](packages/core/PROPOSALS.md) | **What next** — open proposals surfaced by the competitive review (not yet decisions) |
+| [Agent skill](skills/telic-intents/) | **For coding agents** — the patterns as an installable skill (vercel-labs/agent-skills layout), distilled from PATTERNS.md and drift-checked in CI |
+| [Recipes](packages/core/docs/recipes/) | **Worked examples** — full end-to-end wiring against a real vendor, starting with PostHog, plus a micro-frontends setup recipe |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | **How to contribute** — quick start, what review looks at, and how we help |
 | [SECURITY.md](SECURITY.md) | **Reporting vulnerabilities** — private channels and the surfaces researchers should look at |
 

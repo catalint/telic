@@ -151,6 +151,69 @@ function checkExportsBudgetParity(): Violation[] {
 	return violations;
 }
 
+/**
+ * Project-level: the agent skill is a distillation of PATTERNS.md (D33) —
+ * every `P#`/`AP#` it cites must exist as a PATTERNS.md heading, and every
+ * `diagnostic \`code\`` it cites must exist in types.ts's Diagnostic union.
+ * The skill's absence is itself a violation: a doc artifact the repo claims
+ * to ship must exist (the D32 lesson, applied to docs).
+ */
+function checkSkillPatternsParity(): Violation[] {
+	const violations: Violation[] = [];
+	const skillPath = join(repoRoot, "skills", "telic-intents", "AGENTS.md");
+	const skillRel = relative(repoRoot, skillPath);
+	let skill: string;
+	try {
+		skill = readFileSync(skillPath, "utf8");
+	} catch {
+		return [
+			{
+				file: skillRel,
+				line: 0,
+				rule: "skill-patterns-parity",
+				detail: "skills/telic-intents/AGENTS.md is missing — D33 ships it; removing it needs a decision, not a deletion",
+			},
+		];
+	}
+	const patterns = readFileSync(join(repoRoot, "packages", "core", "PATTERNS.md"), "utf8");
+	const types = readFileSync(join(repoRoot, "packages", "core", "src", "types.ts"), "utf8");
+
+	const declaredPatterns = new Set<string>();
+	for (const match of patterns.matchAll(/^### ((?:AP|P)\d+)\./gm)) {
+		const id = match[1];
+		if (id !== undefined) declaredPatterns.add(id);
+	}
+	for (const match of skill.matchAll(/\b((?:AP|P)\d+)\b/g)) {
+		const id = match[1];
+		if (id !== undefined && !declaredPatterns.has(id)) {
+			violations.push({
+				file: skillRel,
+				line: 0,
+				rule: "skill-patterns-parity",
+				detail: `skill cites ${id} but PATTERNS.md has no "### ${id}." heading — the source of truth moved`,
+			});
+		}
+	}
+
+	const declaredDiagnostics = new Set<string>();
+	for (const match of types.matchAll(/readonly code: "([a-z][a-z-]*)"/g)) {
+		const code = match[1];
+		if (code !== undefined) declaredDiagnostics.add(code);
+	}
+	for (const match of skill.matchAll(/diagnostic\s+`([a-z][a-z-]*)`/g)) {
+		const code = match[1];
+		if (code !== undefined && !declaredDiagnostics.has(code)) {
+			violations.push({
+				file: skillRel,
+				line: 0,
+				rule: "skill-patterns-parity",
+				detail: `skill cites diagnostic \`${code}\` but types.ts's Diagnostic union has no such code`,
+			});
+		}
+	}
+	return violations;
+}
+
 function main(): void {
 	const violations: Violation[] = [];
 	for (const pkg of readdirSync(packagesDir)) {
@@ -168,6 +231,7 @@ function main(): void {
 		}
 	}
 	violations.push(...checkExportsBudgetParity());
+	violations.push(...checkSkillPatternsParity());
 
 	if (violations.length === 0) {
 		process.stdout.write("conventions gate passed\n");

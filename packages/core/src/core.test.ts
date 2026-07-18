@@ -4,6 +4,7 @@ import type {
 	AttemptId,
 	AttemptView,
 	Diagnostic,
+	InstanceSentinelEnv,
 	IntentDescriptor,
 	IntentEvent,
 	Mark,
@@ -1153,6 +1154,76 @@ describe("S10.6: connectBrowserLifecycle", () => {
 });
 
 // ---------------------------------------------------------------------------
+// S10.8 duplicate-instance sentinel
+//
+// Once-accounting is keyed per probed host (counted on delivery), so every
+// test injects a fresh host and is order-independent by construction.
+// ---------------------------------------------------------------------------
+
+function makeSentineledRuntime(sentinel: InstanceSentinelEnv): { diagnostics: Diagnostic[] } {
+	const diagnostics: Diagnostic[] = [];
+	createRuntime({ onDiagnostic: (diagnostic) => diagnostics.push(diagnostic) }, sentinel);
+	return { diagnostics };
+}
+
+describe("S10.8: duplicate-instance sentinel", () => {
+	function browserHost(host: Record<string, unknown>): InstanceSentinelEnv {
+		return { browserLike: true, host };
+	}
+
+	it("S10.8: given a single module copy, when a runtime is created, then no duplicate-instance fires and the key is claimed", () => {
+		const host: Record<string, unknown> = {};
+		const { diagnostics } = makeSentineledRuntime(browserHost(host));
+		expect(diagnostics.filter(diagOfCode("duplicate-instance")).length).toBe(0);
+		expect(host.__TELIC_CORE__).toBeDefined();
+	});
+
+	it("S10.8: given one copy, when MULTIPLE runtimes are created, then no duplicate-instance fires (same token)", () => {
+		const host: Record<string, unknown> = {};
+		const first = makeSentineledRuntime(browserHost(host));
+		const second = makeSentineledRuntime(browserHost(host));
+		const fired = [...first.diagnostics, ...second.diagnostics].filter(
+			diagOfCode("duplicate-instance"),
+		);
+		expect(fired.length).toBe(0);
+	});
+
+	it("S10.8: given a non-browser env, when a runtime is created against a conflicting host, then the sentinel is inert", () => {
+		const host: Record<string, unknown> = { __TELIC_CORE__: { foreign: true } };
+		const { diagnostics } = makeSentineledRuntime({ browserLike: false, host });
+		expect(diagnostics.filter(diagOfCode("duplicate-instance")).length).toBe(0);
+	});
+
+	it("S10.8: given the key held by a DIFFERENT copy's token, when runtimes are created, then exactly one duplicate-instance fires and the foreign claim is not overwritten", () => {
+		const foreignToken = { foreign: true };
+		const host: Record<string, unknown> = { __TELIC_CORE__: foreignToken };
+		const first = makeSentineledRuntime(browserHost(host));
+		const second = makeSentineledRuntime(browserHost(host));
+		const fired = [...first.diagnostics, ...second.diagnostics].filter(
+			diagOfCode("duplicate-instance"),
+		);
+		expect(fired.length).toBe(1);
+		expect(host.__TELIC_CORE__).toBe(foreignToken);
+	});
+
+	it("S10.8: given a handler-less detection (the lazy-default ordering), when a later runtime WITH onDiagnostic is created on the same host, then the diagnostic is delivered (once counts delivery, not detection)", () => {
+		const host: Record<string, unknown> = { __TELIC_CORE__: { foreign: true } };
+		createRuntime({}, browserHost(host));
+		const { diagnostics } = makeSentineledRuntime(browserHost(host));
+		expect(diagnostics.filter(diagOfCode("duplicate-instance")).length).toBe(1);
+	});
+
+	it("S10.8: given delivery already happened on one host, when a conflicting runtime is created against a FRESH host, then it fires there too (once-accounting is per host)", () => {
+		const hostA: Record<string, unknown> = { __TELIC_CORE__: { foreign: true } };
+		const hostB: Record<string, unknown> = { __TELIC_CORE__: { foreign: true } };
+		const first = makeSentineledRuntime(browserHost(hostA));
+		const second = makeSentineledRuntime(browserHost(hostB));
+		expect(first.diagnostics.filter(diagOfCode("duplicate-instance")).length).toBe(1);
+		expect(second.diagnostics.filter(diagOfCode("duplicate-instance")).length).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // S11. Purity & environment
 // ---------------------------------------------------------------------------
 
@@ -1255,6 +1326,37 @@ describe("S12: describe()", () => {
 		load.begin();
 		expect(rt.memory.marks().length).toBe(0);
 	});
+
+	it("S12.6: given a declared agent descriptor, when describe() is called, then the entry carries a frozen agent wrapper whose input is forwarded BY REFERENCE (not deep-frozen)", () => {
+		const { rt } = makeRuntime();
+		const inputShape = { type: "object", properties: { sku: { type: "string" } } };
+		rt.intent("cart.addItem", { agent: { summary: "Add a SKU to the cart", input: inputShape } });
+		const descriptor = only(rt.describe());
+		expect(descriptor.agent).toEqual({ summary: "Add a SKU to the cart", input: inputShape });
+		const agent = descriptor.agent;
+		if (agent === undefined) throw new Error("expected an agent descriptor");
+		// Verbatim: telic forwards the caller's input value by reference (S12.6).
+		expect(agent.input).toBe(inputShape);
+		// Wrapper frozen (S12.2/S12.6); the caller-owned input is NOT deep-frozen.
+		expect(Object.isFrozen(agent)).toBe(true);
+		expect(Object.isFrozen(inputShape)).toBe(false);
+	});
+
+	it("S12.6: given an intent declared WITHOUT an agent, when describe() is called, then the descriptor has no agent property (present only when declared)", () => {
+		const { rt } = makeRuntime();
+		rt.intent("cart.view", { tags: ["read"] });
+		const descriptor = only(rt.describe());
+		expect("agent" in descriptor).toBe(false);
+		expect(descriptor.agent).toBeUndefined();
+	});
+
+	it("S12.6: given a name re-declared with a different agent, when describe() is called, then the FIRST declaration's agent wins and is not duplicated (S1.6/D26)", () => {
+		const { rt } = makeRuntime();
+		rt.intent("cart.addItem", { agent: { summary: "first", input: { v: 1 } } });
+		rt.intent("cart.addItem", { agent: { summary: "second", input: { v: 2 } } });
+		const descriptor = only(rt.describe());
+		expect(descriptor.agent).toEqual({ summary: "first", input: { v: 1 } });
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -1324,6 +1426,15 @@ describe("S10.4/S10.5/S10.7: module-level late binding", () => {
 		expect(checkoutMarks.map((mark) => mark.kind)).toEqual(["begun", "fulfilled"]);
 		expect(only(checkoutMarks.filter(ofKind("begun"))).payload).toEqual({ amount: 1 });
 		expect(seen.map((mark) => mark.kind)).toEqual(["begun", "fulfilled", "begun"]);
+	});
+
+	it("S1.6: given a module-level intent declared WITH an agent descriptor, when the default runtime is configured, then describe() forwards the agent verbatim (by reference)", () => {
+		const inputShape = { type: "object", properties: { sku: { type: "string" } } };
+		intent("s16agent.addItem", { agent: { summary: "Add a SKU", input: inputShape } });
+		const { rt } = configureRecordingDefault();
+		const descriptor = rt.describe().find((d) => d.name === "s16agent.addItem");
+		expect(descriptor?.agent).toEqual({ summary: "Add a SKU", input: inputShape });
+		expect(descriptor?.agent?.input).toBe(inputShape);
 	});
 
 	it("S10.4: given a module-level on() subscribed BEFORE configure, when marks record after, then the listener hears them; unsubscribe detaches AND forgets the registry entry", () => {

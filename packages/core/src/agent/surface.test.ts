@@ -158,6 +158,22 @@ describe("S14.2: delegation correctness", () => {
 		expect(described).toEqual(rt.describe());
 		expect(described.length).toBe(2);
 	});
+
+	it("S14.2/S12.6: given an intent declared with an agent descriptor, when describe() is called on the facade, then the agent field flows through verbatim (by reference)", () => {
+		const rt = makeRuntime();
+		const target = {};
+		exposeAgentSurface(rt, { target });
+		const facade = readFacade(target);
+
+		const inputShape = { type: "object", properties: { sku: { type: "string" } } };
+		rt.intent("agent.addItem", { agent: { summary: "Add a SKU", input: inputShape } });
+
+		const described = facade.describe();
+		expect(described).toEqual(rt.describe());
+		const descriptor = only(described.filter((entry) => entry.name === "agent.addItem"));
+		expect(descriptor.agent).toEqual({ summary: "Add a SKU", input: inputShape });
+		expect(descriptor.agent?.input).toBe(inputShape);
+	});
 });
 
 // ---------------------------------------------------------------------------

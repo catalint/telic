@@ -21,6 +21,14 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
    diagnostic were removed together with the payload-egress machinery — telic
    no longer models where a mark is allowed to travel. Clause number retained
    for stability.
+6. `config.agent` is an OPTIONAL, caller-produced descriptor `{ summary?:
+   string; input?: unknown }` — an already-projected shape the caller owns
+   (e.g. a hand-written or `z.toJSONSchema`-derived JSON Schema for `input`).
+   telic forwards it VERBATIM to `describe()` (S12.6) and projects NOTHING
+   itself: it neither derives, validates, nor transforms `input` — the data
+   boundary D30 places that outside telic's realm. First-declaration-wins
+   (S1.3-revised / D26): a re-declaration's differing `agent` is ignored, like
+   `tags`/schemas. No diagnostic; declaring or omitting `agent` is unremarkable.
 
 ## S2. begin()
 
@@ -210,6 +218,28 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
      property is EventTarget-shaped with `currentEntry.url`.
    - The default runtime auto-connects lazily in the browser; explicit
      runtimes do not.
+8. Duplicate-instance sentinel (the two-loaded-copies footgun). At
+   runtime-creation time, and ONLY in a browser-like environment (`typeof
+   document !== "undefined"`, the same gate as the default runtime, S10.4),
+   `createRuntime` probes a well-known `globalThis` key (`__TELIC_CORE__`)
+   carrying a per-module-copy identity token. The FIRST copy to create a
+   runtime claims the key with its token; a creation that finds the key already
+   held by a DIFFERENT token fires diagnostic `duplicate-instance` on the
+   runtime being created — proof that two copies of `@telic/core` are loaded,
+   each with its own tape/registry (the micro-frontend footgun README §5
+   warns about). It fires at most once PER PROBED HOST per module copy,
+   COUNTED ON DELIVERY: a detection on a runtime with no `onDiagnostic`
+   consumes nothing — the probe re-runs at each later runtime creation and
+   delivers to the first handler-bearing one, so the handler-less lazy default
+   (S10.4) cannot silence the `configureDefaultRuntime({ onDiagnostic })` that
+   follows it (S10.5 routes configure through runtime creation). It NEVER
+   throws and NEVER overwrites another copy's claim (the first claimer stays
+   owner). Multiple explicit `createRuntime()` calls within ONE copy find
+   their own token and do NOT fire. The probe target and browser-likeness are
+   injectable (a structural `{ browserLike, host }` seam, same style as
+   connectBrowserLifecycle's `env`, S10.6) so tests are deterministic and
+   never touch the real `globalThis`; the once-accounting is keyed on the
+   host, so tests probing fresh hosts are isolated by construction.
 
 ## S12. describe() (Runtime)
 
@@ -220,6 +250,14 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
 2. The returned array and its entries are frozen.
 3. Silent runtimes still register declarations (describe() works on the server
    — declaration is side-effect-free; only recording is silenced).
+6. When `config.agent` (S1.6) was declared, the descriptor carries an `agent`
+   property; when it was not, the descriptor has NO `agent` property (present
+   only when declared). The value telic exposes is its OWN wrapper `{ summary,
+   input }`, and that wrapper is frozen along with the descriptor entry (S12.2).
+   The caller's `input` value is forwarded BY REFERENCE — telic does NOT
+   deep-freeze it (it is the caller's object; freezing it would be authoring
+   over data telic does not own). First-declaration's `agent` wins (S1.6). (No
+   clause 4; the invokability amendment took 5.)
 
 ## S13. Taps modules (src/taps/*)
 

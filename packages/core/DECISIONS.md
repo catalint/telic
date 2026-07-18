@@ -359,3 +359,100 @@ adoption is ~zero, so a clean cut. SPEC: S1.5/S7.4 tombstoned,
 S2.1/S6.7/S12.1/S14.2/S18.2/S22–S24 excised; types `Exposure`,
 `IntentConfig.transform`/`.exposure`, `RuntimeOptions.strictPrivacy`, and the
 `missing-exposure` diagnostic deleted.
+
+**D31. Agent descriptor — the caller projects the shape, telic only forwards
+it (2026-07-18).** COMPARISON.md's "agent-callable" claim was half-true:
+`describe()` told an agent a payload schema exists (`hasPayloadSchema: true`,
+S12.1) but never its shape, so an agent could not actually construct a valid
+payload (PROPOSALS PR-1). Decided: `IntentConfig`/`IntentDescriptor` gain an
+optional `agent: { summary?: string; input?: unknown }` (new `AgentDescriptor`
+type). The caller projects `input` itself (a hand-written or
+`z.toJSONSchema`-derived JSON Schema, or anything else) and telic forwards it
+VERBATIM through `describe()` — it derives, validates, and transforms nothing,
+the same discipline D28/D30 already commit to for payload data. First-
+declaration-wins (S1.3-revised/D26): a re-declaration's differing `agent` is
+ignored, exactly like `tags`/schemas — no diagnostic either way. The wrapper
+telic returns is its own (frozen along with the descriptor entry per S12.2),
+but the caller's `input` value is forwarded BY REFERENCE and never deep-frozen
+— it is the caller's object, and freezing it would be telic authoring over
+data it does not own. Rejected: telic deriving a JSON Schema itself from the
+Standard Schema payload (Standard Schema v1 is validation-only and exposes no
+shape, so this would require a dependency — violates zero-runtime-deps);
+telic defining its own projection format/policy (that is telic authoring data
+policy, the exact drift D28 forbids — the caller already owns the shape and
+telic's only job is not to lose it in transit). SPEC: S1.6, S12.6 added.
+
+**D32. Duplicate-instance sentinel made real; README's claim was aspirational
+(2026-07-18).** README §5 already asserted telic "ships a dev-mode
+duplicate-instance detector (window sentinel)" — no such mechanism existed in
+code. PROPOSALS PR-3 proposed promoting the idea from dev-mode to an always-on
+check; this decision ships it, correcting the README claim to match reality
+rather than the reverse. `createRuntime` now probes a well-known `globalThis`
+key (`__TELIC_CORE__`) at creation time, gated to browser-like environments
+only (`typeof document !== "undefined"`, the same S10.4 gate the default
+runtime uses — no module-scope env access, SSR-safe). The FIRST loaded copy of
+`@telic/core` to create a runtime claims the key with a per-module identity
+token; a later creation that finds the key held by a DIFFERENT token fires the
+new `duplicate-instance` diagnostic on the runtime being created — proof two
+copies of the module are loaded, each with its own tape and mediation
+registry (the micro-frontend/Module-Federation-version-skew footgun the
+README section is about). Multiple runtimes is not multiple copies: explicit
+`createRuntime()` calls within ONE loaded copy are a supported pattern
+(multi-runtime embedders, S10.1) and share that copy's token, so they never
+fire — only a genuinely distinct module copy does. Fires at most once per
+probed host per module copy, COUNTED ON DELIVERY, and never overwrites the
+first claimer's ownership. Delivery-counting is load-bearing, not a detail:
+the lazy default runtime is created without `onDiagnostic` (S10.4), so a
+detection there would otherwise burn the once-budget into the void and
+permanently silence the `configureDefaultRuntime({ onDiagnostic })` the
+recipe tells users to wire — the exact consumer the diagnostic exists for.
+Since the probe already re-runs at every runtime creation (configure routes
+through creation, S10.5), re-detecting until a handler-bearing runtime
+appears costs two property reads and needs no state beyond a per-host
+delivered set — which also makes tests order-independent (fresh host = fresh
+accounting). Rejected: throwing on detection; re-claiming/re-firing on every
+later duplicate creation (spam / breaks legitimate embedding); and a
+detection latch that re-fires on configure — redundant cache of a fact the
+probe re-reads live each creation, and falsifiable across injected hosts
+unless further keyed per host, at which point it reduces to the chosen
+design. Known, accepted limit: the diagnostic fires only on the LATER-loaded
+(losing) copy; if that copy never creates a handler-bearing runtime, nothing
+is delivered anywhere — a best-effort tripwire, with the build-time
+singleton config as the actual fix (the recipe states this). A data-only
+breadcrumb on the shared key (making the fact page-globally queryable by
+devtools/agents) was considered and DEFERRED: it upgrades the opaque token
+to a versioned cross-copy format — its own wire-contract decision, and
+version skew between copies is a trigger condition of this very bug, so any
+shared shape must be designed version-tolerant deliberately, not as a rider
+here. The
+probe target is injected via a new `InstanceSentinelEnv` (`{ browserLike,
+host }`) second `createRuntime` parameter, mirroring
+`connectBrowserLifecycle`'s `env` seam, so tests never touch the real
+`globalThis`. Docs: `packages/core/docs/recipes/micro-frontends.md` pairs the
+fix with Module Federation `shared: { singleton: true }` / single-spa
+import-map wiring and shows confirming a single instance via `onDiagnostic`
+matching `diagnostic.code === "duplicate-instance"`. SPEC: S10.8 added.
+
+**D33. telic's guidance ships as an installable agent skill (2026-07-18).**
+PROPOSALS PR-5, prompted by finding Vercel's `composition-patterns` agent
+skill during the competitive review: design guidance distributed AS an
+installable artifact for coding agents, not prose an agent must discover and
+distill. telic's equivalent material already existed (PATTERNS P1–P12 /
+AP1–AP9, AI-GUIDE.md) but only in-repo. `skills/telic-intents/`
+(SKILL.md + AGENTS.md, mirroring the vercel-labs/agent-skills layout so
+`npx skills add` resolves it) now carries the distilled rules — 18 rules in
+five priority categories, each with before/after and its diagnostic tie-in.
+PATTERNS.md remains the SOURCE OF TRUTH: the skill is a distillation of it,
+and the conventions gate enforces referential integrity (every `P#`/`AP#`
+cited in the skill exists as a PATTERNS.md heading; every diagnostic code
+cited exists in the types.ts `Diagnostic` union), so a renamed pattern or
+diagnostic breaks CI rather than silently orphaning the skill. Rejected:
+generating the skill from PATTERNS.md (the two serve different readers at
+different granularity — a generator would flatten the distillation into
+duplication); and putting the skill under packages/core (it documents the
+whole library posture, and the vercel-labs convention is a repo-root
+`skills/` directory). Also in this change: the cross-realm design doc's
+draft decision entry is now NUMBER-AGNOSTIC ("D-next") — a draft that pins a
+concrete D-number collides with real decisions landing first, which happened
+twice in two days. Dogfoods the library's own thesis: a library selling an
+agent surface should be adoptable by agents.

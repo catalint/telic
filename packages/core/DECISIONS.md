@@ -456,3 +456,64 @@ draft decision entry is now NUMBER-AGNOSTIC ("D-next") — a draft that pins a
 concrete D-number collides with real decisions landing first, which happened
 twice in two days. Dogfoods the library's own thesis: a library selling an
 agent surface should be adoptable by agents.
+
+**D34. Cross-realm dispatch = correlation over a caller-owned channel; a new
+`/transports/remote-dispatch` leaf, zero new time or transport ownership
+(2026-07-18).** Lifts the design pass at docs/design/cross-realm-dispatch.md
+(PR-2), decided with an explicit criterion from the maintainer: the contract's
+coherence governs; bundle size is a budget with a re-baselining policy, never
+the tiebreaker. Shape as designed: the caller `begin()`s a REAL live attempt
+`X` (`beginRemote`, S15.9) and sends a DISTINCT request envelope
+`{ v: 1, dispatch: { intent, attempt: X, payload, ifUnhandled } }` (S19.4 —
+disjoint from the mark envelope by construction, so a request can never be
+ingested as a mark nor a mark acted on as a request) over a channel the CALLER
+owns; a wired receiver (`receiveRemoteDispatches`, S28.2) runs the remote's
+local handler against an ADOPTED attempt bound to `X` (`executeRemote` +
+`adoptAttempt`, S15.9/S15.10 — settlement-only, no re-begun); settlement
+returns as ordinary marks over the existing transports and resolves the
+caller's live handle via the INGEST COMPLETION INVARIANT (S10.9): "ingest may
+complete local lifecycles, never start them." `handled` across the wire is
+optimistic dispatch — remote `TELIC_NO_HANDLER` rejection when present-but-
+unhandling; silence degrades reject to abandon-on-deadline via the caller's
+`abandonWhen` (telic owns no clock). Parked dispatch is remote-side state
+(S15.7 unchanged). Two discoveries during implementation are part of the
+record: (1) Candidate A (settle-from-ingest) turned out to ALREADY EXIST —
+`applyForeignSettle`/`applySettledState` have always driven a still-active
+local record terminal without re-emitting, because record and live handle
+share one state object; S10.9 made the behavior normative and tests pinned
+it, at zero core bytes. The design pass's premise that "nothing resolves the
+live handle" described the SPEC text, not the code — the spec under-described
+the implementation. (2) The examples pass caught the BEGUN-ECHO ordering
+bug pre-ship: a caller's `begun`, gossiped over a bidirectional mark
+transport, reaches the remote before the request envelope (taps are
+synchronous, channels preserve order) and would have made adoption refuse
+every dispatch as a known-id replay. Fixed in the contract, not the wiring:
+S15.10 adoption is three-way — unknown id → adopt fresh; known ONLY by
+observation (origin-stamped ingested `begun`, same intent, never adopted) →
+adopt THAT record (observation must never block execution); executed/settled/
+mismatched → replay no-op. S28.5 accordingly demotes caller-side `send`
+filtering to a noise choice, never a correctness requirement. New limit,
+named: single SETTLEMENT, not single execution — per-realm registries make
+one-executor unenforceable across realms; AttemptId-as-Idempotency-Key is the
+mitigation at the server. Rejected (design §7): telic-owned channels;
+Comlink-style RPC with re-throw and a pending/timeout table (composes
+instead); a SharedWorker broker registry; a round-trip handled probe;
+remote-authoritative ids (forfeits the reuse spine); an `invoke` flag on the
+mark envelope (would make ingest act); transport-owned consume-to-settle
+(splits record from handle, forges provenance). SPEC: S10.9, S15.9/S15.10,
+S19.4, S28 added. Sizes: leaf 557 brotli (620 budget); wire re-baselined
+1050→1150 and mediate 5250→5500 per the size-gate's stated policy (mediate
+bundles core, which grew by adoptAttempt). Worked examples shipped at
+docs/examples/ (support-widget cross-realm, worker offload, checkout flow).
+Post-review refinements, same change: adoption carries the payload like
+begin does — `adoptAttempt(name, id, payload?)` validates per S2.2
+(diagnostic, still adopts) and stamps `recordedPayload` on fresh records,
+closing the spec↔impl gap the review found (S15.9's validation sentence had
+no reachable seam); and a non-JSON-serializable payload rejects
+`TELIC_ENCODE_FAILED` (distinct from `TELIC_SEND_FAILED`: payload bug vs
+channel state) instead of throwing out of `dispatch` past a
+dangling-active attempt — the S15.3 never-throws posture holds across the
+wire. The review also caught every doc example switching on
+`await attempt.settled` as a string; `settled` resolves a `SettledPhase`
+OBJECT — `(await attempt.settled).phase` — fixed across examples and the
+design doc's appendix.

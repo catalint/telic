@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import type { Mark } from "./types.js";
-import { parseMark, parseWirePayload, serializeMarks } from "./wire.js";
+import {
+	type DispatchRequest,
+	parseDispatchRequest,
+	parseMark,
+	parseWirePayload,
+	serializeDispatchRequest,
+	serializeMarks,
+} from "./wire.js";
 
 // ---------------------------------------------------------------------------
 // Test infrastructure — wire parsers take/return plain values; no runtime.
@@ -25,6 +32,19 @@ const BEGUN = {
 	attempt: "a1",
 	payload: { items: 2 },
 } as const;
+
+const DISPATCH = {
+	intent: "cart.addItem",
+	attempt: "a1",
+} as const;
+
+/** Builds a real, branded DispatchRequest via parseDispatchRequest itself — no `as` casts. */
+function dispatchRequest(dispatch: unknown): DispatchRequest {
+	const request = parseDispatchRequest(JSON.stringify({ v: 1, dispatch }));
+	if (request === undefined)
+		throw new Error("expected a valid dispatch request");
+	return request;
+}
 
 describe("S19.1 parseMark — required fields per kind", () => {
 	it("S19.1: parses a valid begun mark into a real branded Mark", () => {
@@ -261,5 +281,111 @@ describe("S19.2 envelope — serialize + parseWirePayload", () => {
 		});
 		const restored = parseWirePayload(json);
 		expect(restored.map((m) => m.kind)).toEqual(["begun", "noted"]);
+	});
+});
+
+describe("S19.4 DispatchRequest — remote-dispatch request envelope (D34)", () => {
+	it("S19.4: serializeDispatchRequest uses a versioned envelope { v: 1, dispatch }", () => {
+		const request = dispatchRequest(DISPATCH);
+		const json = serializeDispatchRequest(request);
+		expect(JSON.parse(json)).toEqual({ v: 1, dispatch: DISPATCH });
+	});
+
+	it("S19.4: round-trips a bare request (no payload, no ifUnhandled)", () => {
+		const request = dispatchRequest(DISPATCH);
+		expect(plain(request)).toEqual(DISPATCH);
+		expect(Object.isFrozen(request)).toBe(true);
+		expect("payload" in request).toBe(false);
+		expect("ifUnhandled" in request).toBe(false);
+		const restored = parseDispatchRequest(serializeDispatchRequest(request));
+		expect(plain(restored)).toEqual(DISPATCH);
+	});
+
+	it("S19.4: round-trips with payload and ifUnhandled: 'park'", () => {
+		const withExtras = {
+			...DISPATCH,
+			payload: { sku: "abc", qty: 2, nested: [1, { deep: true }] },
+			ifUnhandled: "park",
+		} as const;
+		const request = dispatchRequest(withExtras);
+		expect(plain(request)).toEqual(withExtras);
+		const restored = parseDispatchRequest(serializeDispatchRequest(request));
+		expect(plain(restored)).toEqual(withExtras);
+	});
+
+	it("S19.4: ifUnhandled: 'reject' round-trips too", () => {
+		const withReject = { ...DISPATCH, ifUnhandled: "reject" } as const;
+		expect(plain(dispatchRequest(withReject))).toEqual(withReject);
+	});
+
+	it("S19.4: tolerant — garbage/malformed fields → undefined", () => {
+		expect(parseDispatchRequest("not json")).toBeUndefined();
+		expect(parseDispatchRequest("42")).toBeUndefined();
+		expect(parseDispatchRequest("[]")).toBeUndefined();
+		expect(
+			parseDispatchRequest(JSON.stringify({ v: 2, dispatch: DISPATCH })),
+		).toBeUndefined();
+		expect(parseDispatchRequest(JSON.stringify({ v: 1 }))).toBeUndefined();
+		expect(
+			parseDispatchRequest(JSON.stringify({ v: 1, dispatch: "nope" })),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({ v: 1, dispatch: { attempt: "a1" } }),
+			),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({ v: 1, dispatch: { intent: "cart.addItem" } }),
+			),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({ v: 1, dispatch: { ...DISPATCH, intent: "" } }),
+			),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({ v: 1, dispatch: { ...DISPATCH, attempt: "" } }),
+			),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({ v: 1, dispatch: { ...DISPATCH, intent: 5 } }),
+			),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({ v: 1, dispatch: { ...DISPATCH, attempt: 5 } }),
+			),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({
+					v: 1,
+					dispatch: { ...DISPATCH, ifUnhandled: "retry" },
+				}),
+			),
+		).toBeUndefined();
+		expect(
+			parseDispatchRequest(
+				JSON.stringify({ v: 1, dispatch: { ...DISPATCH, ifUnhandled: null } }),
+			),
+		).toBeUndefined();
+	});
+});
+
+describe("S19.4 disjointness — dispatch vs mark envelopes never cross-parse (S10.9)", () => {
+	it("S19.4: parseDispatchRequest returns undefined for a serialized MARK envelope", () => {
+		const mark = parseMark(BEGUN);
+		if (mark === undefined) throw new Error("expected a valid mark");
+		const markJson = serializeMarks([mark]);
+		expect(parseDispatchRequest(markJson)).toBeUndefined();
+	});
+
+	it("S19.4: parseWirePayload returns [] for a serialized DISPATCH envelope", () => {
+		const request = dispatchRequest(DISPATCH);
+		const dispatchJson = serializeDispatchRequest(request);
+		expect(parseWirePayload(dispatchJson)).toEqual([]);
 	});
 });

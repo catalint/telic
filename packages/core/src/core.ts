@@ -175,6 +175,8 @@ type AttemptRecord = {
 	settledPromise: Promise<SettledPhase> | undefined;
 	settledResolve: ((phase: SettledPhase) => void) | undefined;
 	abandonCleanup: (() => void) | undefined;
+	/** Set once when executeRemote adopts this record (S15.10); internal-only, never on the wire or in views. */
+	adopted?: boolean;
 };
 
 type ListenerEntry = {
@@ -237,6 +239,12 @@ type RuntimeInternals = {
 	hasFulfilledSchema(name: IntentName): boolean;
 	/** Installs the live probe behind this runtime's IntentDescriptor.handled (S12.5). */
 	setHandledProbe(probe: (name: IntentName) => boolean): void;
+	/** Adopts an active attempt bound to a foreign-minted id, emitting no mark; undefined on replay/silent (S15.10). */
+	adoptAttempt(
+		name: IntentName,
+		id: AttemptId,
+		payload?: unknown,
+	): Attempt<unknown, unknown, unknown> | undefined;
 };
 
 const runtimeInternals = new WeakMap<Runtime, RuntimeInternals>();
@@ -1164,6 +1172,70 @@ export function createRuntime(opts?: RuntimeOptions, sentinelEnv?: InstanceSenti
 		setHandledProbe(probe: (name: IntentName) => boolean): void {
 			handledProbe = probe;
 		},
+		adoptAttempt(
+			name: IntentName,
+			id: AttemptId,
+			payload?: unknown,
+		): Attempt<unknown, unknown, unknown> | undefined {
+			// Settlement-only correlation (S15.10): a live handle on the GIVEN id,
+			// emitting no mark; terminal marks flow through the normal handle+settle
+			// path, carrying `id`. Three-way resolution by the id's current standing.
+			if (mode === "silent") return undefined;
+			const config = declarations.get(name)?.config;
+			const fulfilledSchema = config?.fulfilled;
+			// Adoption is the remote counterpart of begin: S2.2 validation applies
+			// (diagnostic, still adopts — record-first).
+			if (config?.payload !== undefined) {
+				validateValue(config.payload, payload, name, (issues): Diagnostic => {
+					return { code: "invalid-payload", intent: name, issues };
+				});
+			}
+			const existing = attemptsById.get(id);
+			if (existing !== undefined) {
+				// Adopt a record known ONLY by observation (origin-stamped ingested
+				// begun, S10.3): same intent, still active, never adopted. The caller's
+				// begun echo ordinarily arrives BEFORE the request, so observing a
+				// begin must not block executing it (the begun-echo ordering, S15.9).
+				if (
+					existing.adopted !== true &&
+					existing.phase.phase === "active" &&
+					existing.intent === name &&
+					existing.origin !== undefined
+				) {
+					existing.adopted = true;
+					return buildAttemptHandle<unknown, unknown, unknown>(
+						existing,
+						existing.recordedPayload,
+						fulfilledSchema,
+					);
+				}
+				// Already adopted, settled, intent mismatch, or locally-minted → replay no-op.
+				return undefined;
+			}
+			const since = now();
+			const record: AttemptRecord = {
+				id,
+				intent: name,
+				recordedPayload: payload,
+				parent: undefined,
+				retryOf: undefined,
+				origin: undefined,
+				beginSeq: seqCounter,
+				boundTo: undefined,
+				keyRef: undefined,
+				key: undefined,
+				phase: Object.freeze({ phase: "active", since }),
+				lastActivity: since,
+				controller: undefined,
+				settledPromise: undefined,
+				settledResolve: undefined,
+				abandonCleanup: undefined,
+				adopted: true,
+			};
+			attemptsById.set(id, record);
+			activeIds.add(id);
+			return buildAttemptHandle<unknown, unknown, unknown>(record, payload, fulfilledSchema);
+		},
 	});
 
 	runtimeControls.set(runtime, {
@@ -1317,6 +1389,7 @@ function internalsOf(runtime: Runtime): RuntimeInternals {
 		setHandledProbe(): void {
 			// A foreign Runtime keeps its default all-false handled reporting.
 		},
+		adoptAttempt: (): Attempt<unknown, unknown, unknown> | undefined => undefined,
 	};
 }
 
@@ -1520,6 +1593,12 @@ export type RuntimeMediationSeam = {
 	hasFulfilledSchema(name: IntentName): boolean;
 	/** Installs the live probe behind this runtime's IntentDescriptor.handled (S12.5). */
 	setHandledProbe(probe: (name: IntentName) => boolean): void;
+	/** Adopts an active attempt on a foreign-minted id without emitting a mark (S15.10); undefined on replay/silent. */
+	adoptAttempt(
+		name: IntentName,
+		id: AttemptId,
+		payload?: unknown,
+	): Attempt<unknown, unknown, unknown> | undefined;
 };
 
 /** INTERNAL — the mediation seam accessor (S15.1/S12.5). Not public API. */
@@ -1531,6 +1610,7 @@ export function mediationSeamOf(runtime: Runtime): RuntimeMediationSeam {
 		emitDiagnostic: internals.emitDiagnostic,
 		hasFulfilledSchema: internals.hasFulfilledSchema,
 		setHandledProbe: internals.setHandledProbe,
+		adoptAttempt: internals.adoptAttempt,
 	};
 }
 

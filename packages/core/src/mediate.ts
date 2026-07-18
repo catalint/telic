@@ -25,6 +25,7 @@ import type {
 	MediationResult,
 	Mediator,
 	PayloadFor,
+	RemoteCorrelation,
 	Runtime,
 	Unsubscribe,
 } from "./types.js";
@@ -35,6 +36,7 @@ export type {
 	MediationHandler,
 	MediationResult,
 	Mediator,
+	RemoteCorrelation,
 } from "./types.js";
 
 type ParkedDispatch = {
@@ -190,6 +192,50 @@ function dispatchOn(
 	throw new Error("telic mediate: run() did not invoke its fn synchronously");
 }
 
+/**
+ * Begins a REAL live attempt for a crossing whose handler lives elsewhere
+ * (S15.9): declareOrGet applies the world's config without firing
+ * duplicate-intent (S15.2), begin applies opts and returns an inert attempt in
+ * silent mode (S15.5). No handler runs, nothing parks — the attempt settles
+ * only via the return leg (S10.9) or its own abandon paths.
+ */
+function beginRemoteOn(
+	world: MediationWorld,
+	name: IntentName,
+	payload: unknown,
+	opts: DispatchOptions | undefined,
+): Attempt<unknown, unknown, unknown> {
+	return world.resolveIntent(name).begin(payload, opts);
+}
+
+/** Runs the world's handler against an attempt ADOPTED on the caller's id (S15.9). */
+function executeRemoteOn(
+	world: MediationWorld,
+	name: IntentName,
+	payload: unknown,
+	corr: RemoteCorrelation,
+): void {
+	const seam = world.seam();
+	// Active record on corr.attempt, NO begun mark; undefined = silent runtime OR
+	// a known-id replay (channel-echo dedupe) — both are no-ops (S15.9/S15.10).
+	const adopted = seam.adoptAttempt(name, corr.attempt, payload);
+	if (adopted === undefined) return;
+	const handler = world.handlers.get(name);
+	if (handler !== undefined) {
+		// within-parented, S3.12 settlement; the terminal carries corr.attempt.
+		executeDispatch(world, name, handler, adopted, payload);
+		return;
+	}
+	if (corr.ifUnhandled === "park") {
+		// Correlation parked; drainParked runs it against the adopted id (S15.7).
+		enqueueParked(world, name, adopted, payload);
+		return;
+	}
+	// Observable answer: the rejected mark carries the caller's id (S15.9).
+	seam.emitDiagnostic({ code: "no-handler", intent: name });
+	adopted.reject({ code: "TELIC_NO_HANDLER" });
+}
+
 // ---------------------------------------------------------------------------
 // Module world — follows the DEFAULT runtime late-bound (S15.1)
 // ---------------------------------------------------------------------------
@@ -248,6 +294,33 @@ export function command<N extends IntentName>(name: N): CommandStub<N> {
 		dispatchOn(moduleWorld, name, payload, opts);
 }
 
+/**
+ * Begins a REAL live attempt for a remote crossing on the default-runtime world
+ * (S15.9): the handler lives elsewhere, so no handler runs here and nothing
+ * parks. Consumed by the remote-dispatch transport via structural injection.
+ */
+export function beginRemote<N extends IntentName>(
+	name: N,
+	payload?: PayloadFor<N>,
+	opts?: DispatchOptions,
+): Attempt<unknown, unknown, unknown> {
+	return beginRemoteOn(moduleWorld, name, payload, opts);
+}
+
+/**
+ * Runs the default-runtime world's registered handler against an attempt ADOPTED
+ * on the caller's id (S15.9): no begun mark, terminal carries corr.attempt. A
+ * known id is a replay no-op; silent runtime is a no-op. Returns void —
+ * observation happens via marks.
+ */
+export function executeRemote<N extends IntentName>(
+	name: N,
+	payload: PayloadFor<N>,
+	corr: RemoteCorrelation,
+): void {
+	executeRemoteOn(moduleWorld, name, payload, corr);
+}
+
 // ---------------------------------------------------------------------------
 // createMediator — isolated per-runtime mediation world (S15.1)
 // ---------------------------------------------------------------------------
@@ -280,6 +353,16 @@ export function createMediator(runtime: Runtime): Mediator {
 			<N extends IntentName>(name: N): CommandStub<N> =>
 			(payload?: PayloadFor<N>, opts?: DispatchOptions): Attempt<unknown, unknown, unknown> =>
 				dispatchOn(world, name, payload, opts),
+		beginRemote: <N extends IntentName>(
+			name: N,
+			payload?: PayloadFor<N>,
+			opts?: DispatchOptions,
+		): Attempt<unknown, unknown, unknown> => beginRemoteOn(world, name, payload, opts),
+		executeRemote: <N extends IntentName>(
+			name: N,
+			payload: PayloadFor<N>,
+			corr: RemoteCorrelation,
+		): void => executeRemoteOn(world, name, payload, corr),
 	};
 	return mediator;
 }

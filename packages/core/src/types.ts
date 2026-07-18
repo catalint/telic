@@ -481,6 +481,14 @@ export type DispatchOptions = BeginOptions & {
 	readonly ifUnhandled?: "reject" | "park";
 };
 
+/** Settlement-only correlation for executeRemote (S15.9): the caller's attempt id + no-handler policy. */
+export type RemoteCorrelation = {
+	/** The foreign-minted id the adopted attempt binds to; its terminal mark flows back (S15.10). */
+	readonly attempt: AttemptId;
+	/** "reject" (default): reject {code:"TELIC_NO_HANDLER"}; "park": stay parked until a handler registers. */
+	readonly ifUnhandled?: "reject" | "park";
+};
+
 /** Typed dispatch stub for one intent name (S15.8) — the owning domain exports it from its contract subpath. */
 export type CommandStub<N extends IntentName> = (
 	payload?: PayloadFor<N>,
@@ -500,6 +508,14 @@ export type Mediator = {
 		opts?: DispatchOptions,
 	): Attempt<unknown, unknown, unknown>;
 	command<N extends IntentName>(name: N): CommandStub<N>;
+	/** Begins a REAL live attempt whose handler lives elsewhere (S15.9); no handler runs, nothing parks. */
+	beginRemote<N extends IntentName>(
+		name: N,
+		payload?: PayloadFor<N>,
+		opts?: DispatchOptions,
+	): Attempt<unknown, unknown, unknown>;
+	/** Runs the registered handler against an adopted attempt bound to corr.attempt (S15.9); no-op on replay/silent. */
+	executeRemote<N extends IntentName>(name: N, payload: PayloadFor<N>, corr: RemoteCorrelation): void;
 };
 
 /** Helpers for consumers. */

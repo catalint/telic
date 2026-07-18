@@ -239,15 +239,50 @@ foreign origin") is what must stop the echo** — the caller's local terminal *d
 forward once to the remote, where the remote's `X` is already terminal, so it is
 absorbed first-write-wins (S3.4). One extra in-flight mark, harmless.
 
-**Lean: Candidate B.** It matches the codebase's sharpest current — "taps/
-transports unreachable from a core import," "core never imports wire," the ~5 KB
-core anchor (DESIGN "Risks we carry knowingly," §6 below). Every other cross-realm
-concern in telic is a transport leaf; a house reviewer will rightly ask why *this*
-one reaches into core when none of S22–S24 did. Candidate A is the cleaner
-end-state and the better provenance, and it is logged as the considered-heavier
-alternative (§7) — if a second consumer for "ingest settles a live attempt"
-appears, A stops being remote-dispatch-only and earns the core change. Until then,
-B keeps the boundary where the rest of the library keeps it.
+**Candidate B has a mechanical hole the transport-owned framing glosses.** The
+return leg rides the existing mark transports (S22–S24), and *those transports
+call `ingest()` themselves* — the receiver does not sit between a foreign
+terminal and the tape. To "consume" the settlement instead, remote-dispatch must
+either intercept another transport's ingest path (coupling two leaves that are
+each supposed to be independent), or let the terminal ingest normally and settle
+the handle afterward from a subscription — by which point the attempt *record*
+is already terminal while the live handle is still active, and the handle-settle
+re-emits a second terminal for an already-terminal record. Either way, B splits
+record from handle in the interim, and its tape carries a local-origin terminal
+for a settlement that actually happened remotely — a forged provenance, which is
+a fidelity cost for a library whose one promise is fidelity (DESIGN, the data
+boundary).
+
+**Adopt Candidate A — framed as the invariant it actually is.** Not "remote
+dispatch's settle mechanism" but a core coherence rule: *the attempt record and
+the live `Attempt` handle are two views of one state and must never disagree; an
+ingested terminal mark for a still-live local attempt drives that handle
+terminal — first-write-wins, no re-emit.* The bright line that keeps §2's
+argument fully intact:
+
+> **Ingest may complete local lifecycles; it may never start them.** A foreign
+> `begun` never creates a live handle and never runs a handler — that would be
+> invocation, §2's forbidden move. A foreign terminal may resolve one — that is
+> reconciliation of a fact the tape already records. Settlement runs only what
+> S3 already promises on settle (`.settled` resolution, `signal` abort,
+> listeners); no user handler executes.
+
+Under A the feature itself shrinks: the return leg needs **no receiver logic at
+all** — the existing transports plus the invariant settle the caller, the
+`{ AttemptId → Attempt }` table disappears, and remote-dispatch's caller half is
+request-leg-only. Size is real but subordinate: the invariant costs a live-index
+lookup on terminal ingest, absorbed by the size budget's stated re-baselining
+policy if headroom runs out — the contract is not the thing to bend for bytes.
+
+> **Implementation note (D34).** Reading the code during implementation showed
+> Candidate A already existed: `applyForeignSettle → applySettledState` drives a
+> still-active local record terminal — aborting the controller, resolving
+> `.settled`, without re-emitting — because the record and the live handle share
+> one state object by construction. A cost **zero core bytes**: SPEC S10.9 made
+> the existing behavior normative and tests pinned it. This section's premise
+> that "nothing in S10.3 resolves the live handle" was true of the SPEC *text*,
+> not the implementation — the spec under-described the code, which is the
+> safest direction for a premise to be wrong.
 
 Everything below assumes the live handle *does* get settled (by A or B) and shows
 that the rest is pre-existing semantics.
@@ -380,13 +415,16 @@ House style — what was considered and why not.
   of lost clauses, not aesthetics. Caller-minted id + a real live attempt (Model
   A) is what makes §5 mostly a citation exercise.
 
-- **settle-from-ingest as a core rule (Candidate A, §5.0).** Considered, not
-  rejected — *deferred*. It is the cleaner end-state (foreign-origin provenance,
-  generalizes, no echo) but touches the size-gated core for a single consumer.
-  Logged here as the sanctioned upgrade path: when a second consumer for "an
-  ingested settlement resolves a live local attempt" appears, Candidate A earns
-  the core change; until then, transport-owned consume-to-settle (Candidate B)
-  keeps the boundary where the rest of the library keeps it.
+- **Transport-owned consume-to-settle (Candidate B, §5.0).** Rejected after a
+  closer pass. The return leg rides transports whose `ingest()` the receiver
+  cannot cleanly intercept, so B either couples two transport leaves or tolerates
+  a window where the record is terminal and the live handle is not; it forges
+  local-origin provenance for a settlement that happened remotely; and it needs
+  an `{ AttemptId → Attempt }` table plus loop-safety-dependent echo absorption
+  that Candidate A simply doesn't have. Its one virtue — an untouched core —
+  priced module layering above contract coherence; the decision criterion is the
+  reverse: the contract makes sense first, and the size budget's own
+  re-baselining policy absorbs the bytes.
 
 - **Overloading the mark envelope with an `invoke` flag.** (§2.) Rejected: makes
   `ingest` side-effecting — every forwarded `begun` becomes a remote execution.
@@ -422,16 +460,24 @@ Because the caller holds a real live attempt, first-write-wins (S3.4),
 `abandonWhen` (S2.6), navigation auto-abandon (S10.6), and truthful `inProgress()`
 (S4.4) are inherited, so replay-idempotency, dead-channel abandonment, and
 race-safety need no new rules.
-**One open sub-decision (settling the live handle):** ingest updates *records*,
-not the live `Attempt` (S10.3/S4.4), so a returning terminal mark does not by
-itself resolve `.settled`. Two candidates — **A) settle-from-ingest** (a core rule:
-an ingested terminal for a live local attempt drives it terminal, first-write-wins,
-no re-emit; cleaner, foreign-origin provenance, generalizes; **cost:** touches
-core) and **B) consume-to-settle** (transport-owned: the receiver's
-`{ id → attempt }` table calls `fulfill/reject`; core untouched; **cost:**
-local-origin re-emitted terminal, echo stopped by loop-safety S22.2). **Leaning
-B** to keep the boundary where S22–S24 keep it; A logged as the deferred upgrade
-when a second consumer appears.
+**The live-handle settlement rule (resolved in this draft: Candidate A, as a
+core invariant):** ingest updates *records*, not the live `Attempt`
+(S10.3/S4.4), so without a rule a returning terminal mark would leave `.settled`
+hanging while the tape says fulfilled — record and handle disagreeing about one
+state. Adopted: an ingested terminal mark for a still-live LOCAL attempt drives
+that handle terminal — first-write-wins, no re-emit — under the bright line
+**ingest may complete local lifecycles, never start them** (a foreign `begun`
+never creates a handle or runs a handler, preserving §2's non-acting argument;
+settlement runs only what S3 already promises). Consequences: record/handle
+coherence becomes a stated invariant, provenance stays foreign-origin
+(fidelity), and the return leg needs no receiver logic — existing transports
+plus the invariant settle the caller, so remote-dispatch's caller half is
+request-leg-only. Rejected sub-alternative: transport-owned consume-to-settle
+(an `{ id → attempt }` table calling fulfill/reject) — it cannot cleanly
+intercept other transports' ingest, splits record from handle in the interim,
+forges local provenance, and needs echo absorption; its one virtue was an
+untouched core, and size is not the criterion that decides a contract (the
+budget's stated re-baselining policy absorbs the bytes).
 **One new limit, named, not a mechanism:** cross-realm dispatch guarantees single
 **settlement**, not single **execution** — per-realm registries (D18) make "one
 handler per intent" unenforceable across realms; the `AttemptId`-as-Idempotency-Key
@@ -441,11 +487,12 @@ telic pending/timeout table (composes instead); a SharedWorker broker owning a
 global registry (S24 is authoritative for observation, not invocation); a
 round-trip probe with a telic-owned timeout; remote-authoritative id /
 caller-observes-only (forfeits the reuse spine); overloading the mark envelope
-with an `invoke` flag (would make `ingest` act). SPEC (when decided): new S28
-`transports/remote-dispatch`; a request-envelope addition beside S19; the chosen
-live-handle-settlement rule as an S10.3 amendment (Candidate A) or an S28 receiver
-clause (Candidate B); an S15 cross-reference for the single-settlement-not-
-single-execution limit.
+with an `invoke` flag (would make `ingest` act); transport-owned
+consume-to-settle (§5.0 — splits record from handle, forges provenance). SPEC
+(when decided): new S28 `transports/remote-dispatch`; a request-envelope
+addition beside S19; the live-handle-settlement invariant as an S10.3
+amendment ("ingest may complete local lifecycles, never start them"); an S15
+cross-reference for the single-settlement-not-single-execution limit.
 
 ---
 
@@ -489,3 +536,96 @@ right side of the boundary. Cross-realm dispatch is correlation, not delivery.
 Strip any of these and you are asking telic to own time or transport. It will not
 — which is exactly what lets it sit alongside Comlink, Module Federation, and a
 SharedWorker hub instead of competing with them (COMPARISON verdicts).
+
+---
+
+## Appendix A — what using it looks like (the DX check)
+
+The contract-first test: if this reads awkwardly, the design is wrong. Names are
+the normative S28 ones; the semantics are exactly §§1–5. Scenario: a support
+widget (`support.example.com`, iframed) invokes the shop host's cart — two
+separately-deployed apps that cannot import each other.
+
+```ts
+// ── shop host (shop.example.com) — owns the capability, wires the receiver ──
+import { currentRuntime } from "@telic/core"
+import { executeRemote, handle } from "@telic/core/mediate"
+import { connectWindow } from "@telic/core/transports/post-message"
+import { receiveRemoteDispatches } from "@telic/core/transports/remote-dispatch"
+
+// the ordinary local handler — nothing remote about it (P7, unchanged)
+handle("cart.addItem", async (attempt, { sku }) =>
+	addItem(sku, { idempotencyKey: attempt.id }))   // attempt.id IS the caller's X (§5.4)
+
+const widgetOrigin = "https://support.example.com"
+
+// return leg: settlement marks reach the widget over the EXISTING transport (§2)
+connectWindow(currentRuntime(), {
+	target: widgetFrame.contentWindow,
+	targetOrigin: widgetOrigin,
+	accept: (origin) => origin === widgetOrigin,
+	send: ["cart.*"],
+})
+
+// request leg: the ONLY thing that may act on request envelopes (§2)
+receiveRemoteDispatches({
+	listen: window,
+	accept: (event) => event.origin === widgetOrigin,
+	execute: executeRemote,          // the S15.9 seam, structurally injected (§6)
+})
+```
+
+```ts
+// ── support widget (support.example.com) — invokes; never imports the host ──
+import { currentRuntime } from "@telic/core"
+import { beginRemote } from "@telic/core/mediate"
+import { connectWindow } from "@telic/core/transports/post-message"
+import { createRemoteDispatcher } from "@telic/core/transports/remote-dispatch"
+
+const hostOrigin = "https://shop.example.com"
+
+// return leg: hear the host's marks (plain observability wiring, useful anyway)
+connectWindow(currentRuntime(), {
+	target: window.parent,
+	targetOrigin: hostOrigin,
+	accept: (origin) => origin === hostOrigin,
+})
+
+// request leg: the caller hands telic a `send` — telic never holds a socket (§1)
+const remote = createRemoteDispatcher({
+	begin: beginRemote,              // the S15.9 seam, structurally injected (§6)
+	send: (json) => window.parent.postMessage(json, hostOrigin),
+})
+
+// …in the chat UI: "add the recommended item to my cart"
+const attempt = remote.dispatch("cart.addItem", { sku: "SKU-42" }, {
+	ifUnhandled: "park",                     // host's cart island may still be mounting (§4)
+	abandonWhen: AbortSignal.timeout(4000),  // the caller's clock — telic owns none (§3)
+})
+
+switch ((await attempt.settled).phase) {
+	case "fulfilled": showToast("Added to your cart")            ; break
+	case "rejected":  showToast("The shop declined that item")   ; break // incl. TELIC_NO_HANDLER
+	case "abandoned": showToast("Cart isn't reachable right now"); break // silence → deadline (§3)
+}
+```
+
+What the author gets without writing it:
+
+- **The three-way `switch` IS §3/§4 made tangible** — `rejected` means "the other
+  side answered no," `abandoned` means "nobody answered in my deadline," and the
+  UX can honestly distinguish them. No other cross-realm mechanism hands an app
+  that distinction.
+- **Crossing a realm is explicit at the call site** (`remote.dispatch`, not an
+  invisible fallback on plain `dispatch`) — the AP4 spirit: no magic remoting. A
+  domain can still export a typed `command()`-style stub wrapping
+  `remote.dispatch` so the string lives in one place (P12 applies unchanged).
+- **The crossing is on both tapes.** Breadcrumbs, analytics rules, and
+  `inProgress()` see it while in flight — a support copilot on either side can
+  answer "what is the user mid-way through" and include the cross-realm command.
+- **`attempt.id` doubles as the Idempotency-Key** at the host's server, so the
+  §5.4 double-execution limit collapses to one effect where it is the server's
+  job to collapse it.
+- **The widget's `Attempt` settles by the §5.0 invariant** — no callback, no
+  correlation table in app code; the returning mark resolves `.settled` exactly
+  like a local settle would.

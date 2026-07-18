@@ -1,9 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentSurface } from "./agent/surface.js";
 import { exposeAgentSurface } from "./agent/surface.js";
-import type { Diagnostic, Mark, Runtime } from "./core.js";
+import type { Attempt, AttemptId, Diagnostic, Mark, Runtime } from "./core.js";
 import { configureDefaultRuntime, createRuntime, currentRuntime, intent, memory } from "./core.js";
-import { command, createMediator, dispatch, handle } from "./mediate.js";
+import {
+	beginRemote,
+	command,
+	createMediator,
+	dispatch,
+	executeRemote,
+	handle,
+} from "./mediate.js";
 import type { StandardSchemaV1 } from "./standard-schema.js";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +66,12 @@ function tapMarks(rt: Runtime): Mark[] {
 		},
 	});
 	return seen;
+}
+
+/** Brands a literal as a foreign-minted id (no cast) — an id no runtime here mints. */
+function asAttemptId(value: string): AttemptId;
+function asAttemptId(value: string): string {
+	return value;
 }
 
 function only<T>(items: readonly T[]): T {
@@ -400,5 +413,196 @@ describe("S15.1 (D18): per-runtime mediation", () => {
 			"begun",
 			"fulfilled",
 		]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// S15.9 (D34): remote correlation — beginRemote / executeRemote
+// ---------------------------------------------------------------------------
+
+describe("S15.9 (D34): remote correlation", () => {
+	it("S15.9: given beginRemote on a declared name with a registered handler, then it returns a live active attempt, invokes NO handler, emits its begun mark, and fires no duplicate-intent", async () => {
+		const { rt, diagnostics } = configureRecordingDefault();
+		const seen = tapMarks(rt);
+		intent("m159.remoteOp", { fulfilled: passthroughSchema() });
+		let invoked = false;
+		handle("m159.remoteOp", async () => {
+			invoked = true;
+			return { ok: true };
+		});
+		const attempt = beginRemote("m159.remoteOp", { sku: "x" });
+		// A REAL live attempt — begin mechanics only, no handler, no parking.
+		expect(attempt.phase().phase).toBe("active");
+		await Promise.resolve();
+		expect(invoked).toBe(false);
+		// It settles only via the return leg: a begun with no terminal here.
+		expect(seen.map((mark) => mark.kind)).toEqual(["begun"]);
+		// Resolved the existing declaration through declareOrGet — no duplicate-intent (S15.2).
+		expect(diagnostics.some((diagnostic) => diagnostic.code === "duplicate-intent")).toBe(false);
+	});
+
+	it("S15.9: given beginRemote with abandonWhen, when the signal aborts, then the attempt abandons {why:signal}", () => {
+		configureRecordingDefault();
+		const controller = new AbortController();
+		const attempt = beginRemote("m159b.remoteOp", { n: 1 }, { abandonWhen: controller.signal });
+		expect(attempt.phase().phase).toBe("active");
+		controller.abort();
+		const phase = attempt.phase();
+		expect(phase.phase).toBe("abandoned");
+		if (phase.phase === "abandoned") expect(phase.abandon).toEqual({ why: "signal" });
+	});
+
+	it("S15.9: given a registered handler, when executeRemote runs against a foreign id, then the handler runs within the adopted attempt, its terminal carries THE provided id, and no begun mark is emitted for it", async () => {
+		const { rt } = configureRecordingDefault();
+		const seen = tapMarks(rt);
+		intent("m159c.remoteOp", { fulfilled: passthroughSchema() });
+		const child = intent("m159c.child");
+		const received: unknown[] = [];
+		let adopted: Attempt<unknown, unknown, unknown> | undefined;
+		handle("m159c.remoteOp", async (attempt, payload) => {
+			received.push(payload);
+			adopted = attempt;
+			// A sync-prefix begin proves within-parenting to the adopted id (S15.2).
+			child.begin();
+			return { ok: true, data: { done: true } };
+		});
+		const foreignId = asAttemptId("wire-1");
+		executeRemote("m159c.remoteOp", { sku: "y" }, { attempt: foreignId });
+		if (adopted === undefined) throw new Error("handler did not run synchronously");
+		expect(adopted.id).toBe(foreignId);
+		const settledPhase = await adopted.settled;
+		expect(settledPhase.phase).toBe("fulfilled");
+		if (settledPhase.phase === "fulfilled") expect(settledPhase.outcome).toEqual({ done: true });
+		// The handler saw the real payload (the adopted record's view payload is undefined by design).
+		expect(received).toEqual([{ sku: "y" }]);
+		const childBegun = only(memory.marks({ pattern: "m159c.child", kinds: ["begun"] }));
+		if (childBegun.kind === "begun") expect(childBegun.parent).toBe(foreignId);
+		else throw new Error("expected a begun mark");
+		// NO begun mark for the adopted intent; only its terminal, carrying the provided id.
+		expect(memory.marks({ pattern: "m159c.remoteOp", kinds: ["begun"] }).length).toBe(0);
+		const terminal = only(memory.marks({ pattern: "m159c.remoteOp" }));
+		expect(terminal.kind).toBe("fulfilled");
+		expect(terminal.attempt).toBe(foreignId);
+		// Across the tape: the child begun, then the adopted terminal — no begun for the remote op.
+		expect(seen.map((mark) => `${mark.kind}:${mark.intent}`)).toEqual([
+			"begun:m159c.child",
+			"fulfilled:m159c.remoteOp",
+		]);
+	});
+
+	it("S15.9: given NO handler and default policy, when executeRemote runs, then the adopted attempt rejects {code:TELIC_NO_HANDLER} for the provided id with a no-handler diagnostic and no begun mark", () => {
+		const { rt, diagnostics } = configureRecordingDefault();
+		const seen = tapMarks(rt);
+		const foreignId = asAttemptId("wire-2");
+		executeRemote("m159d.orphan", { a: 1 }, { attempt: foreignId });
+		const terminal = only(seen);
+		expect(terminal.kind).toBe("rejected");
+		expect(terminal.attempt).toBe(foreignId);
+		if (terminal.kind === "rejected") {
+			expect(terminal.reason).toEqual({ code: "TELIC_NO_HANDLER" });
+		}
+		expect(seen.filter((mark) => mark.kind === "begun").length).toBe(0);
+		const noHandler = diagnostics.filter(
+			(diagnostic) => diagnostic.code === "no-handler" && diagnostic.intent === "m159d.orphan",
+		);
+		expect(noHandler.length).toBe(1);
+	});
+
+	it("S15.9: given ifUnhandled park and no handler, when executeRemote runs, then nothing is emitted until a later handle() drains it against the adopted id", async () => {
+		const { rt } = configureRecordingDefault();
+		const seen = tapMarks(rt);
+		intent("m159e.job", { fulfilled: passthroughSchema() });
+		const foreignId = asAttemptId("wire-3");
+		executeRemote("m159e.job", { n: 7 }, { attempt: foreignId, ifUnhandled: "park" });
+		// Parked: the correlation waits — nothing emitted, no no-handler diagnostic.
+		expect(seen.length).toBe(0);
+		const received: unknown[] = [];
+		let adopted: Attempt<unknown, unknown, unknown> | undefined;
+		handle("m159e.job", async (attempt, payload) => {
+			received.push(payload);
+			adopted = attempt;
+			return { ok: true, data: payload };
+		});
+		if (adopted === undefined) throw new Error("drain did not run the handler synchronously");
+		expect(adopted.id).toBe(foreignId);
+		const settledPhase = await adopted.settled;
+		expect(settledPhase.phase).toBe("fulfilled");
+		if (settledPhase.phase === "fulfilled") expect(settledPhase.outcome).toEqual({ n: 7 });
+		expect(received).toEqual([{ n: 7 }]);
+		// Only the drained terminal, carrying the provided id; still no begun.
+		expect(seen.filter((mark) => mark.kind === "begun").length).toBe(0);
+		const terminal = only(seen);
+		expect(terminal.kind).toBe("fulfilled");
+		expect(terminal.attempt).toBe(foreignId);
+	});
+
+	it("S15.9: given the same foreign id twice, when executeRemote runs each time, then the handler runs ONCE (second call is a channel-echo replay no-op)", async () => {
+		configureRecordingDefault();
+		let invocations = 0;
+		const settledIds: string[] = [];
+		handle("m159f.remoteOp", async (attempt) => {
+			invocations += 1;
+			settledIds.push(attempt.id);
+			return { ok: true };
+		});
+		const foreignId = asAttemptId("wire-4");
+		executeRemote("m159f.remoteOp", { v: 1 }, { attempt: foreignId });
+		// The id is now KNOWN to the runtime; a second crossing for it is a no-op.
+		executeRemote("m159f.remoteOp", { v: 2 }, { attempt: foreignId });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(invocations).toBe(1);
+		expect(settledIds).toEqual([foreignId]);
+	});
+
+	it("S15.9: given a silent runtime, when executeRemote runs, then it is a no-op and nothing records", async () => {
+		configureDefaultRuntime({ mode: "silent" });
+		let invoked = false;
+		handle("m159g.remoteOp", async () => {
+			invoked = true;
+			return { ok: true };
+		});
+		executeRemote("m159g.remoteOp", { secret: true }, { attempt: asAttemptId("wire-5") });
+		await Promise.resolve();
+		expect(invoked).toBe(false);
+		expect(memory.marks().length).toBe(0);
+	});
+
+	it("S15.9: given a mediator world, when executeRemote runs against a foreign id, then its handler runs against the adopted id, the terminal carries it, and no begun mark is emitted", async () => {
+		const { rt } = makeRuntime();
+		const mediator = createMediator(rt);
+		rt.intent("med.remoteOp", { fulfilled: passthroughSchema() });
+		const seen = tapMarks(rt);
+		let adopted: Attempt<unknown, unknown, unknown> | undefined;
+		mediator.handle("med.remoteOp", async (attempt, payload) => {
+			adopted = attempt;
+			return { ok: true, data: payload };
+		});
+		const foreignId = asAttemptId("wire-6");
+		mediator.executeRemote("med.remoteOp", { from: "wire" }, { attempt: foreignId });
+		if (adopted === undefined) throw new Error("handler did not run synchronously");
+		expect(adopted.id).toBe(foreignId);
+		const settledPhase = await adopted.settled;
+		expect(settledPhase.phase).toBe("fulfilled");
+		if (settledPhase.phase === "fulfilled") expect(settledPhase.outcome).toEqual({ from: "wire" });
+		expect(seen.filter((mark) => mark.kind === "begun").length).toBe(0);
+		const terminal = only(seen);
+		expect(terminal.kind).toBe("fulfilled");
+		expect(terminal.attempt).toBe(foreignId);
+	});
+
+	it("S15.9: given a mediator world and the same foreign id twice, then the handler runs once (replay no-op, mediator isolation)", async () => {
+		const { rt } = makeRuntime();
+		const mediator = createMediator(rt);
+		let invocations = 0;
+		mediator.handle("med.replayOp", async () => {
+			invocations += 1;
+			return { ok: true };
+		});
+		const foreignId = asAttemptId("wire-7");
+		mediator.executeRemote("med.replayOp", { v: 1 }, { attempt: foreignId });
+		mediator.executeRemote("med.replayOp", { v: 2 }, { attempt: foreignId });
+		await Promise.resolve();
+		expect(invocations).toBe(1);
 	});
 });

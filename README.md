@@ -389,6 +389,7 @@ The design is documented in full and travels with the package (in `packages/core
 | [COMPARISON.md](packages/core/COMPARISON.md) | **Versus what** — code-level before/after against MediatR, NestJS CQRS, Comlink, DI containers, Redux, and micro-frontend buses |
 | [PROPOSALS.md](packages/core/PROPOSALS.md) | **What next** — open proposals surfaced by the competitive review (not yet decisions) |
 | [Agent skill](skills/telic-intents/) | **For coding agents** — the patterns as an installable skill (vercel-labs/agent-skills layout), distilled from PATTERNS.md and drift-checked in CI |
+| [Examples](packages/core/docs/examples/) | **Complete use cases** — end-to-end scenarios headlined by cross-realm dispatch, plus a same-realm checkout saga; where Recipes wires a vendor and PATTERNS states the rule, Examples walks the whole path |
 | [Recipes](packages/core/docs/recipes/) | **Worked examples** — full end-to-end wiring against a real vendor, starting with PostHog, plus a micro-frontends setup recipe |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | **How to contribute** — quick start, what review looks at, and how we help |
 | [SECURITY.md](SECURITY.md) | **Reporting vulnerabilities** — private channels and the surfaces researchers should look at |

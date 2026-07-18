@@ -114,6 +114,10 @@
 			"types": "./dist/transports/shared-worker.d.ts",
 			"default": "./dist/transports/shared-worker.js"
 		},
+		"./transports/remote-dispatch": {
+			"types": "./dist/transports/remote-dispatch.d.ts",
+			"default": "./dist/transports/remote-dispatch.js"
+		},
 		"./adapters/xstate": {
 			"types": "./dist/adapters/xstate.d.ts",
 			"default": "./dist/adapters/xstate.js"

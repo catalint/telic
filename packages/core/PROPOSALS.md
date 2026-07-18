@@ -50,7 +50,7 @@ boundary (D30) says it should. Zero-dep intact; agents get a real, dispatchable 
 
 ## PR-2. Cross-realm dispatch — dispatch to a handler that lives elsewhere
 
-**Status: Design pass complete → `docs/design/cross-realm-dispatch.md` — awaiting decision.**
+**Status: Implemented → D34** (design pass at `docs/design/cross-realm-dispatch.md`; Candidate A resolved as the S10.9 ingest completion invariant).
 
 **Problem.** `dispatch` resolves a handler in **one runtime's** mediation registry
 ([SPEC S15](SPEC.md)). telic already forwards *marks* across realms — BroadcastChannel

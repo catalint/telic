@@ -268,3 +268,65 @@ export function parseWirePayload(json: string): readonly Mark[] {
 	}
 	return marks;
 }
+
+// ---------------------------------------------------------------------------
+// DispatchRequest (S19.4, D34) — remote-dispatch REQUEST envelope
+// ---------------------------------------------------------------------------
+
+/** The request leg of remote dispatch (D34); the return leg rides ordinary marks. */
+export type DispatchRequest = {
+	readonly intent: IntentName;
+	readonly attempt: AttemptId;
+	readonly payload?: unknown;
+	readonly ifUnhandled?: "reject" | "park";
+};
+
+/** Versioned dispatch envelope — distinct `dispatch` key keeps it off the `marks` envelope. */
+export type DispatchEnvelope = {
+	readonly v: 1;
+	readonly dispatch: DispatchRequest;
+};
+
+/** JSON, versioned envelope `{ v: 1, dispatch }`. */
+export function serializeDispatchRequest(request: DispatchRequest): string {
+	const envelope: DispatchEnvelope = { v: 1, dispatch: request };
+	return JSON.stringify(envelope);
+}
+
+function parseIfUnhandled(value: unknown): "reject" | "park" | undefined {
+	return value === "reject" || value === "park" ? value : undefined;
+}
+
+/**
+ * Tolerant: not-JSON, wrong version, missing `dispatch`, malformed
+ * intent/attempt/ifUnhandled → undefined, never a throw. Distinct `dispatch`
+ * key (vs `marks`) makes this disjoint from parseWirePayload by construction
+ * (S10.9 bright line, enforced at the wire).
+ */
+export function parseDispatchRequest(json: string): DispatchRequest | undefined {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(json);
+	} catch {
+		return undefined;
+	}
+	if (!isRecord(parsed)) return undefined;
+	if (parsed.v !== 1) return undefined;
+	const { dispatch } = parsed;
+	if (!isRecord(dispatch)) return undefined;
+	if (typeof dispatch.intent !== "string" || dispatch.intent.length === 0)
+		return undefined;
+	if (typeof dispatch.attempt !== "string" || dispatch.attempt.length === 0)
+		return undefined;
+	const ifUnhandled = parseIfUnhandled(dispatch.ifUnhandled);
+	if (dispatch.ifUnhandled !== undefined && ifUnhandled === undefined)
+		return undefined;
+
+	const request: DispatchRequest = {
+		intent: asIntentName(dispatch.intent),
+		attempt: asAttemptId(dispatch.attempt),
+		...("payload" in dispatch ? { payload: dispatch.payload } : {}),
+		...(ifUnhandled !== undefined ? { ifUnhandled } : {}),
+	};
+	return Object.freeze(request);
+}

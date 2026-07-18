@@ -241,6 +241,20 @@ descriptions (`given/when/then` style, e.g. "S3.4: second fulfill is ignored").
    never touch the real `globalThis`; the once-accounting is keyed on the
    host, so tests probing fresh hosts are isolated by construction.
 
+## S10 amendment (the ingest completion invariant — D34)
+
+9. The record and the live `Attempt` handle are two views of ONE state and can
+   never disagree: an ingested terminal mark (S10.3) whose `attempt` id matches
+   a still-ACTIVE local attempt drives that attempt terminal — the phase
+   updates, `attempt.signal` aborts, `attempt.settled` resolves, keyed-active
+   and abandonWhen cleanups run — FIRST-WRITE-WINS (S3.4 protects the converse
+   race), and NO new mark is emitted (the ingested mark IS the record of the
+   settlement; provenance stays foreign). The bright line: **ingest may
+   complete local lifecycles; it may never start them** — an ingested `begun`
+   creates a record (S10.3) but never a live handle, never invokes a handler,
+   and never executes anything (a request to execute is not a mark; S19.4/S28).
+   Settlement through this path runs only what S3 already promises on settle.
+
 ## S12. describe() (Runtime)
 
 1. `runtime.describe()` returns one `IntentDescriptor` per DISTINCT declared
@@ -396,6 +410,63 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    `command` binds to that mediator's registry; the module-level `command`
    binds to the default-runtime world.
 
+## S15 amendment (remote correlation — D34)
+
+9. Two remote-facing functions, module-level and on `createMediator` worlds,
+   consumed by the remote-dispatch transport (S28) via STRUCTURAL INJECTION
+   (the leaf never imports mediate):
+   - `beginRemote(name, payload, opts?): Attempt` — begins a REAL live attempt
+     for a crossing whose handler lives elsewhere: resolves the intent through
+     the world's declareOrGet path (config when declared, else config-less;
+     NEVER fires `duplicate-intent`, mirroring S15.2), applies
+     `DispatchOptions` (`abandonWhen`, key semantics), invokes NO handler and
+     parks nothing. Silent mode: inert attempt (S15.5). The attempt settles
+     only via the return leg (S10.9) or its own abandon paths.
+   - `executeRemote(name, payload, corr: { attempt: AttemptId; ifUnhandled?:
+     "reject" | "park" })` — runs the world's registered handler for `name`
+     against an ADOPTED attempt bound to the PROVIDED id: the runtime creates
+     an active record with that id WITHOUT emitting a `begun` mark
+     (settlement-only correlation; the seam is `adoptAttempt`, S15.10), the
+     handler runs within() it with S3.12 settlement semantics, and its
+     terminal mark carries the caller's id — that mark is what flows back.
+     Payload validation follows S2.2 against the world's declaration when one
+     exists (diagnostic, still runs). No handler + `"reject"` (default): the
+     adopted attempt is rejected `{ code: "TELIC_NO_HANDLER" }` + `no-handler`
+     diagnostic — the rejected mark for the caller's id is the observable
+     answer (design §3). No handler + `"park"`: the CORRELATION is parked in
+     the world's FIFO park queue and drains per S15.7 (executing against the
+     adopted id). executeRemote is a NO-OP exactly when `adoptAttempt`
+     returns undefined (S15.10) — an id already EXECUTED here or already
+     settled is a replay and must not run twice, but a record known ONLY
+     from observation (an ingested foreign `begun`, S10.3) does NOT block
+     execution: the caller's begun, echoed over a mark transport, ordinarily
+     arrives BEFORE the request envelope (taps fire synchronously; channels
+     preserve order), and observing a begin must never prevent executing its
+     request. Silent mode: no-op. Returns void — machinery calls this;
+     observation happens via marks.
+10. `adoptAttempt(name, id, payload?): Attempt | undefined`
+    (RuntimeMediationSeam): returns a live handle bound to the given
+    foreign-minted id, emitting NO mark; settlement emits ordinary terminal
+    marks carrying that id through the normal S3 paths. Adoption is the
+    remote counterpart of begin, so it carries the payload like begin does:
+    when a declaration with a payload schema exists, the payload is validated
+    per S2.2 (diagnostic `invalid-payload`, adoption still proceeds —
+    record-first), and a FRESH record stamps it as `recordedPayload`
+    (an observed record keeps its observed payload). Resolution by the id's
+    current standing:
+    - **Unknown id** → create an ACTIVE record bound to it (no keyRef, no
+      boundTo), mark it ADOPTED, return the handle.
+    - **Known ONLY by observation** — a record created by an ingested foreign
+      `begun` (S10.3: origin-stamped, never adopted), still ACTIVE, with the
+      SAME intent name → adopt THAT record: build the live handle over it
+      (its observed payload/parent stay — better fidelity than a fresh
+      record), mark it ADOPTED, return the handle. Observation must never
+      block execution (the begun-echo ordering, S15.9).
+    - **Anything else** — already adopted (executed here), already settled,
+      intent mismatch, locally-minted record, or silent mode → undefined (the
+      S15.9 replay/no-op).
+    Adopted-ness is per-record state; it never appears on the wire.
+
 ## S12 amendment (descriptor invokability)
 
 5. `IntentDescriptor` gains `handled: boolean` — true while a handler is
@@ -481,6 +552,16 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    parse rejects unknown versions (forward-compat: better to drop than
    misread).
 3. Used by persist (S18) and future transports; core never imports wire.
+4. Remote-dispatch REQUEST envelope (D34): `serializeDispatchRequest(request):
+   string` and `parseDispatchRequest(json): DispatchRequest | undefined` with
+   `DispatchRequest = { intent: IntentName; attempt: AttemptId; payload?:
+   unknown; ifUnhandled?: "reject" | "park" }`. Versioned envelope `{ v: 1,
+   dispatch: {...} }`, DISTINCT from the mark envelope by construction — a
+   parser for one returns undefined for the other, so a request can never be
+   ingested as a mark nor a mark acted on as a request (the S10.9 bright
+   line, enforced at the wire). Tolerant reader: unknown version, missing
+   discriminant, or malformed fields → undefined, never a throw. Payload
+   passes through as unknown.
 
 ## S20. TanStack Query adapter (src/adapters/tanstack-query.ts)
 
@@ -580,6 +661,53 @@ of a dispatch() call, never from queues, timers, retries, or transports.
    as S22 (wire + loop safety).
 3. No timers, no reconnection logic (initiative boundary): a dead port is the
    app's problem to reconnect.
+
+## S28. Cross-realm dispatch — remote-dispatch (src/transports/remote-dispatch.ts)
+
+Design: docs/design/cross-realm-dispatch.md (D34). The caller owns the channel;
+telic contributes correlation. Request leg only — the RETURN leg is ordinary
+settlement marks over the existing mark transports (S22–S24), resolved on the
+caller by the ingest completion invariant (S10.9). No timers, no retries, no
+delivery guarantee, no reconnection (S24.3 verbatim). Wire + types imports only;
+mediation capabilities arrive STRUCTURALLY INJECTED (S15.9) so the leaf stays
+unreachable from a core import.
+
+1. `createRemoteDispatcher(opts): { dispatch, disconnect }` — caller half.
+   opts: `begin` (an S15.9 `beginRemote`-shaped function), `send: (json:
+   string) => void` (the caller's channel — telic never holds a socket).
+   `dispatch(name, payload, opts?)`: begins the live attempt via `begin`,
+   serializes the S19.4 request (carrying `opts.ifUnhandled` when given), and
+   calls `send` synchronously. Neither serialization nor sending may throw to
+   the dispatcher (the S15.3 posture holds across the wire): a synchronous
+   serialization failure (non-JSON-serializable payload) rejects the attempt
+   `{ code: "TELIC_ENCODE_FAILED" }` (the caller's payload bug — never
+   retryable), and a synchronous `send` throw rejects
+   `{ code: "TELIC_SEND_FAILED" }` (channel state — the command observably
+   never left). Returns the Attempt. After `disconnect()`, `dispatch` still
+   begins (recording is truthful) but rejects `TELIC_SEND_FAILED` without
+   calling `send`.
+2. `receiveRemoteDispatches(opts): () => void` — remote half. opts: `listen`
+   (structural `{ addEventListener, removeEventListener }`-shaped source of
+   `message` events; e.g. a window, a MessagePort, a BroadcastChannel),
+   `accept?: (event) => boolean` (gate over the RAW event — REQUIRED when the
+   listen source exposes origins, i.e. window `message` events, matching
+   S23.1's mandatory allow-listing posture; optional for origin-less channels),
+   `execute` (an S15.9 `executeRemote`-shaped function). Handler: parse via
+   S19.4 (tolerant — non-request traffic on a shared channel is silently
+   ignored), gate via `accept`, then `execute` synchronously downstream of the
+   message event. Returns a detach fn.
+3. Replay/echo safety: envelope duplication dedupes at `executeRemote`
+   (S15.9 known-id no-op); settlement duplication dedupes at the caller by
+   first-write-wins (S3.4). The transport adds no state of its own.
+4. Single settlement, not single execution (design §5.4): a request fanned to
+   two realms runs two handlers; the first terminal back settles the caller
+   (S3.4), and collapsing the two EFFECTS is the server's idempotency job,
+   keyed by the AttemptId. The transport does not deduplicate across realms.
+5. Wiring note: a bidirectional mark transport beside the request channel MAY
+   forward the caller's `begun` to the remote before the request arrives —
+   correctness does not depend on filtering it (S15.10 adopts observed
+   records). Filtering the caller's outbound marks (e.g. `send: []`) is a
+   noise/bandwidth choice, never a correctness requirement.
 
 ## S25. XState adapter (src/adapters/xstate.ts)
 

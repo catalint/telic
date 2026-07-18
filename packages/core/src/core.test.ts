@@ -20,6 +20,7 @@ import {
 	createRuntime,
 	currentRuntime,
 	intent,
+	mediationSeamOf,
 	memory,
 	on,
 } from "./core.js";
@@ -1029,6 +1030,257 @@ describe("S10: runtime", () => {
 
 		expect(tapped.length).toBe(2);
 		expect(listened.length).toBe(2);
+	});
+
+	it("S10.9: given a LIVE local attempt, when a foreign terminal mark for its id is ingested, then the live handle settles (settled resolves, signal aborts) and NO new mark is emitted", async () => {
+		const { rt, clock } = makeRuntime();
+		const attempt = rt.intent("local.op").begin();
+		// Access before settle so the controller/promise exist ON the record and transition live.
+		const signal = attempt.signal;
+		const settledPromise = attempt.settled;
+		const begun = only(rt.memory.marks().filter(ofKind("begun")));
+
+		const delivered: Mark[] = [];
+		rt.on("*", (event: IntentEvent) => {
+			delivered.push(event.mark);
+		});
+
+		const foreignFulfilled: Mark = {
+			kind: "fulfilled",
+			seq: begun.seq,
+			at: clock.t + 5,
+			intent: "local.op",
+			attempt: attempt.id,
+			outcome: 42,
+			origin: { tab: "peer" },
+		};
+		rt.ingest([foreignFulfilled]);
+
+		expect(attempt.phase().phase).toBe("fulfilled");
+		expect(signal.aborted).toBe(true);
+		expect((await settledPromise).phase).toBe("fulfilled");
+
+		// The ingested mark IS the settlement: one new delivery, no locally emitted terminal.
+		expect(delivered.length).toBe(1);
+		expect(only(delivered).kind).toBe("fulfilled");
+		expect(only(delivered).origin).toEqual({ tab: "peer" }); // provenance stays foreign
+		const fulfilledMarks = rt.memory.marks().filter(ofKind("fulfilled"));
+		expect(fulfilledMarks.length).toBe(1);
+		expect(idStr(only(fulfilledMarks).attempt)).toBe(idStr(attempt.id));
+	});
+
+	it("S10.9: given the live attempt already settled locally, when a foreign terminal for it is ingested, then first-write-wins keeps the local settlement (record unchanged, no double-settle throw)", () => {
+		const { rt, clock, diagnostics } = makeRuntime();
+		const attempt = rt.intent("local.op", { fulfilled: numberSchema }).begin();
+		attempt.fulfill(1); // local settlement wins
+		const begun = only(rt.memory.marks().filter(ofKind("begun")));
+
+		const foreignRejected: Mark = {
+			kind: "rejected",
+			seq: begun.seq,
+			at: clock.t + 9,
+			intent: "local.op",
+			attempt: attempt.id,
+			reason: { code: "LATE" },
+			origin: { tab: "peer" },
+		};
+		rt.ingest([foreignRejected]);
+
+		const view = rt.memory.last("local.*");
+		expect(view?.phase).toBe("fulfilled");
+		if (view && view.phase === "fulfilled") expect(view.outcome).toBe(1);
+		expect(attempt.phase().phase).toBe("fulfilled");
+		expect(diagnostics.filter(diagOfCode("double-settle")).length).toBe(0);
+	});
+
+	it("S10.9: given an ingested begun mark, then a record exists but nothing executes and no live-handle behavior is created", () => {
+		const { rt } = makeRuntime();
+		const source = makeRuntime();
+		const srcAttempt = source.rt.intent("ext.job", { fulfilled: numberSchema }).begin();
+		const foreignBegun: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("begun"))),
+			origin: { tab: "worker" },
+		};
+		rt.ingest([foreignBegun]);
+
+		// A record exists and is active — ingest started nothing (no handler, no terminal).
+		expect(
+			rt.memory.inProgress().some((view) => idStr(view.id) === idStr(srcAttempt.id)),
+		).toBe(true);
+		expect(rt.memory.last("ext.*")?.phase).toBe("active");
+		expect(rt.memory.marks().length).toBe(1); // only the ingested begun; nothing auto-executed
+
+		// Ingest may COMPLETE the lifecycle: a later foreign terminal settles the record.
+		srcAttempt.fulfill(3);
+		const foreignFulfilled: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("fulfilled"))),
+			origin: { tab: "worker" },
+		};
+		rt.ingest([foreignFulfilled]);
+		expect(rt.memory.last("ext.*")?.phase).toBe("fulfilled");
+	});
+
+	it("S15.10: given adoptAttempt on an unknown id, then it returns a live handle whose fulfill emits a terminal mark carrying the adopted id and never a begun mark", () => {
+		const { rt } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		const throwaway = makeRuntime();
+		throwaway.rt.intent("adopt.op").begin(); // consume the first-minted id
+		// Distinct from rt's would-be-first-mint, so the assertions pin "bind to the GIVEN id".
+		const foreignId = throwaway.rt.intent("adopt.op").begin().id;
+
+		const handle = seam.adoptAttempt("adopt.op", foreignId);
+		expect(handle).toBeDefined();
+		// The adopted record is registered active on the GIVEN id (not a detached handle).
+		expect(
+			rt.memory.inProgress().some((view) => idStr(view.id) === idStr(foreignId)),
+		).toBe(true);
+		expect(rt.memory.marks().length).toBe(0); // adoption emits NO mark of its own
+
+		if (handle) {
+			handle.fulfill(undefined);
+			const terminal = only(rt.memory.marks());
+			expect(terminal.kind).toBe("fulfilled");
+			expect(idStr(terminal.attempt)).toBe(idStr(foreignId));
+			expect(rt.memory.marks().filter(ofKind("begun")).length).toBe(0);
+		}
+	});
+
+	it("S15.10: given adoptAttempt on an id the runtime already knows, then it returns undefined (replay dedupe, S15.9)", () => {
+		const { rt } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		const known = rt.intent("known.op").begin();
+		expect(seam.adoptAttempt("known.op", known.id)).toBeUndefined();
+	});
+
+	it("S15.10: given a declared payload schema, when adoptAttempt carries an invalid payload, then invalid-payload fires and adoption still proceeds with the payload recorded (S2.2 record-first)", () => {
+		const { rt, diagnostics } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		rt.intent("adopt.strict", {
+			payload: schema((value) =>
+				typeof value === "number" ? value : { issues: [{ message: "not a number" }] },
+			),
+		});
+		const foreignId = makeRuntime().rt.intent("adopt.strict").begin().id;
+
+		const handle = seam.adoptAttempt("adopt.strict", foreignId, "not-a-number");
+		expect(handle).toBeDefined();
+		expect(diagnostics.filter(diagOfCode("invalid-payload")).length).toBe(1);
+		// The payload is stamped on the fresh adopted record (adoption mirrors begin).
+		const view = rt.memory.inProgress().find((v) => idStr(v.id) === idStr(foreignId));
+		expect(view?.payload).toBe("not-a-number");
+	});
+
+	it("S15.10: given a silent runtime, then adoptAttempt returns undefined", () => {
+		const { rt } = makeRuntime({ mode: "silent" });
+		const seam = mediationSeamOf(rt);
+		const foreignId = makeRuntime().rt.intent("adopt.op").begin().id;
+		expect(seam.adoptAttempt("adopt.op", foreignId)).toBeUndefined();
+	});
+
+	it("S15.10: given a record known ONLY by an observed foreign begun, when adoptAttempt is called for it, then it adopts the existing record (observed payload kept), returns a handle, and re-emits no begun", () => {
+		const { rt } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		const source = makeRuntime();
+		const srcAttempt = source.rt.intent("cross.op", { fulfilled: numberSchema }).begin();
+		// The caller's begun echoes over the mark transport BEFORE the request envelope (S15.9);
+		// origin-stamping is what marks it as observed (S28.5's transport job).
+		const foreignBegun: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("begun"))),
+			payload: { order: 7 },
+			origin: { tab: "caller" },
+		};
+		rt.ingest([foreignBegun]);
+		expect(rt.memory.last("cross.*")?.phase).toBe("active"); // record exists purely from observation
+
+		const handle = seam.adoptAttempt("cross.op", srcAttempt.id);
+		expect(handle).toBeDefined();
+		if (handle) {
+			expect(handle.payload).toEqual({ order: 7 }); // observed payload survives — no fresh record
+			handle.fulfill(5);
+			const terminal = only(rt.memory.marks().filter(ofKind("fulfilled")));
+			expect(idStr(terminal.attempt)).toBe(idStr(srcAttempt.id));
+		}
+		// No begun re-emitted: the only begun on the tape is the observed one.
+		expect(rt.memory.marks().filter(ofKind("begun")).length).toBe(1);
+	});
+
+	it("S15.10: given a fresh adopted record, when a foreign begun for the same id and intent is later ingested, then the record survives and adoption is unaffected (begun-echo reverse ordering, S15.9)", () => {
+		const { rt } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		const source = makeRuntime();
+		const srcAttempt = source.rt.intent("cross.op").begin();
+
+		const handle = seam.adoptAttempt("cross.op", srcAttempt.id); // envelope first: fresh adopted record
+		expect(handle).toBeDefined();
+
+		// The caller's begun echoes back AFTER the request; applyForeignMark keeps the local record.
+		const foreignBegun: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("begun"))),
+			origin: { tab: "caller" },
+		};
+		rt.ingest([foreignBegun]);
+
+		// Still exactly one attempt for the id, still active, and adoption state survived the echo.
+		expect(
+			rt.memory.inProgress().filter((view) => idStr(view.id) === idStr(srcAttempt.id)).length,
+		).toBe(1);
+		expect(seam.adoptAttempt("cross.op", srcAttempt.id)).toBeUndefined(); // already adopted
+		if (handle) {
+			handle.fulfill(undefined);
+			expect(idStr(only(rt.memory.marks().filter(ofKind("fulfilled"))).attempt)).toBe(
+				idStr(srcAttempt.id),
+			);
+		}
+	});
+
+	it("S15.10: given an observed record already adopted once, when adoptAttempt is called again, then it returns undefined (replay)", () => {
+		const { rt } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		const source = makeRuntime();
+		const srcAttempt = source.rt.intent("cross.op").begin();
+		const foreignBegun: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("begun"))),
+			origin: { tab: "caller" },
+		};
+		rt.ingest([foreignBegun]);
+
+		expect(seam.adoptAttempt("cross.op", srcAttempt.id)).toBeDefined();
+		expect(seam.adoptAttempt("cross.op", srcAttempt.id)).toBeUndefined();
+	});
+
+	it("S15.10: given an observed record, when adoptAttempt is called with a DIFFERENT intent name, then it returns undefined (intent mismatch)", () => {
+		const { rt } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		const source = makeRuntime();
+		const srcAttempt = source.rt.intent("cross.op").begin();
+		const foreignBegun: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("begun"))),
+			origin: { tab: "caller" },
+		};
+		rt.ingest([foreignBegun]);
+
+		expect(seam.adoptAttempt("other.op", srcAttempt.id)).toBeUndefined();
+	});
+
+	it("S15.10: given an observed record that ALREADY settled, when adoptAttempt is called for it, then it returns undefined", () => {
+		const { rt } = makeRuntime();
+		const seam = mediationSeamOf(rt);
+		const source = makeRuntime();
+		const srcAttempt = source.rt.intent("cross.op", { fulfilled: numberSchema }).begin();
+		const foreignBegun: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("begun"))),
+			origin: { tab: "caller" },
+		};
+		rt.ingest([foreignBegun]);
+		srcAttempt.fulfill(2);
+		const foreignFulfilled: Mark = {
+			...only(source.rt.memory.marks().filter(ofKind("fulfilled"))),
+			origin: { tab: "caller" },
+		};
+		rt.ingest([foreignFulfilled]);
+		expect(rt.memory.last("cross.*")?.phase).toBe("fulfilled");
+
+		expect(seam.adoptAttempt("cross.op", srcAttempt.id)).toBeUndefined();
 	});
 
 	// Ordering here is LOAD-BEARING: the silent-default assertion must run before the

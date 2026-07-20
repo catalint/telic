@@ -46,11 +46,11 @@
 		"prepack": "bun run build"
 	},
 	"peerDependencies": {
-		"typescript": ">=5.5"
+		"typescript": ">=5.5 <7.0.0"
 	},
 	"devDependencies": {
 		"@types/bun": "^1.3.14",
-		"typescript": "^7.0.2"
+		"typescript": "^5.9.0"
 	},
 	"engines": {
 		"node": ">=20"

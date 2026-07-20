@@ -5,12 +5,23 @@ updates:
       - "/"
       - "/packages/core"
       - "/packages/react"
-      - "/packages/lint"
     schedule:
       interval: weekly
     groups:
       dev-dependencies:
         dependency-type: development
+  - package-ecosystem: npm
+    directory: "/packages/lint"
+    schedule:
+      interval: weekly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # lint uses the classic TS Compiler API (extract.ts); typescript 7.x
+      # is the native-compiler rewrite and doesn't export it (see PR #4).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
